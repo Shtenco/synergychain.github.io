@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#020403">
+  <title>SINERGYCHAIN · Growth OS V7</title>
+  <style>
+    :root{color-scheme:dark;--g:#00e878;--bg:#030604;--line:#193524;--muted:#98a79e}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);font-family:Arial,sans-serif;color:#fff}
+    body{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 72% 12%,#0b3b22 0,transparent 36%),linear-gradient(135deg,#020302,#07100a)}
+    .card{width:min(780px,100%);border:1px solid var(--line);border-radius:28px;padding:clamp(28px,6vw,58px);background:rgba(5,12,8,.92);box-shadow:0 40px 150px #000}
+    .eyebrow{font-size:12px;letter-spacing:4px;color:var(--g);font-weight:900}.card h1{margin:20px 0 18px;font-size:clamp(44px,9vw,92px);line-height:.88;letter-spacing:-5px}.card h1 em{font-style:normal;color:var(--g)}
+    p{color:var(--muted);line-height:1.7;font-size:16px}.track{height:6px;border-radius:20px;background:#112018;overflow:hidden;margin-top:30px}.track i{display:block;height:100%;width:8%;background:var(--g);box-shadow:0 0 26px var(--g);transition:width .35s}.status{margin-top:13px;font-size:13px;color:#c8d2cc}.error{color:#ff9999;white-space:pre-wrap}.retry{display:none;margin-top:20px;border:0;border-radius:12px;background:var(--g);color:#021008;padding:13px 20px;font-weight:900;cursor:pointer}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="eyebrow">SINERGYCHAIN · ОГАС 2.0</div>
+    <h1>ЗАПУСКАЕМ<br><em>GROWTH OS</em></h1>
+    <p>Подготавливаем OLGA AGI, бизнес-автопилот, AI SMM, CRM, Sales, CFO и технологическую экосистему SINERGY.</p>
+    <div class="track"><i id="bar"></i></div>
+    <div class="status" id="status">Регистрация портала…</div>
+    <button class="retry" id="retry">Повторить запуск</button>
+  </main>
+  <script>
+    const statusEl=document.getElementById('status');
+    const bar=document.getElementById('bar');
+    const retry=document.getElementById('retry');
+    const set=(n,t)=>{bar.style.width=n+'%';statusEl.textContent=t};
+    async function boot(){
+      retry.style.display='none';statusEl.classList.remove('error');
+      try{
+        if(!('serviceWorker' in navigator)) throw new Error('Service Worker не поддерживается этим браузером.');
+        set(20,'Загружаем безопасную Pages-сборку…');
+        await navigator.serviceWorker.register('./sw-loader.js',{scope:'./',updateViaCache:'none'});
+        await navigator.serviceWorker.ready;
+        set(70,'Разворачиваем 70 компонентов портала…');
+        if(!navigator.serviceWorker.controller){
+          await new Promise(resolve=>navigator.serviceWorker.addEventListener('controllerchange',resolve,{once:true}));
+        }
+        set(100,'SINERGYCHAIN готов. Открываем…');
+        setTimeout(()=>location.replace('./index.html?sinergy=v7'),450);
+      }catch(error){
+        statusEl.classList.add('error');
+        statusEl.textContent='Ошибка запуска: '+(error?.message||error);
+        retry.style.display='inline-block';
+      }
+    }
+    retry.addEventListener('click',()=>location.reload());
+    boot();
+  </script>
+</body>
+</html>

@@ -3,6 +3,8 @@ name: Build SINERGY Finance APK
 on:
   push:
     branches: [build/sinergy-finance-apk]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

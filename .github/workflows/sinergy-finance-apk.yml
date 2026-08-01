@@ -17,6 +17,12 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Install Android platform
+      shell: bash
+      run: |
+        yes | sdkmanager --licenses >/dev/null || true
+        sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
     - name: Set up Gradle 8.2.1
       uses: gradle/actions/setup-gradle@v4
       with:
@@ -40,20 +46,40 @@ jobs:
         test -f android/app/src/main/assets/www/index.html
 
     - name: Build debug APK
+      id: gradle_build
       shell: bash
       run: |
         export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
-        test -x "$JAVA_HOME/bin/java"
-        "$JAVA_HOME/bin/java" -version
-        gradle -p android clean assembleDebug --stacktrace
+        mkdir -p android/build-diagnostics
+        set +e
+        {
+          echo "JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
+          gradle --version
+          gradle -p android clean assembleDebug --stacktrace --info
+        } > android/build-diagnostics/build.log 2>&1
+        status=$?
+        cat android/build-diagnostics/build.log
+        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+        exit "$status"
 
     - name: Verify APK
+      if: success()
       run: |
         test -f android/app/build/outputs/apk/debug/app-debug.apk
         unzip -t android/app/build/outputs/apk/debug/app-debug.apk
         sha256sum android/app/build/outputs/apk/debug/app-debug.apk | tee android/app/build/outputs/apk/debug/SHA256SUMS.txt
 
+    - name: Upload build diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: SINERGY-FINANCE-build-diagnostics
+        path: android/build-diagnostics/build.log
+        if-no-files-found: warn
+
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: SINERGY-FINANCE-v1.0.0

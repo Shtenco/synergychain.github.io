@@ -14,17 +14,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore exact audited source archive
+      - name: Restore and verify exact audited source archive
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/myfinance-parts /tmp/myfinance-src
-          for p in 00 01 02; do
-            base64 -d "android/myfinance-v3/source.b64.part${p}" > "/tmp/myfinance-parts/part${p}"
-          done
-          for p in 03 04; do
-            base64 -d "android/myfinance-v3/source.part${p}.b64" > "/tmp/myfinance-parts/part${p}"
-          done
+          mkdir -p /tmp/myfinance-parts /tmp/myfinance-src reports
+          python3 - <<'PY'
+          import base64, binascii, hashlib, pathlib, re, sys
+          root = pathlib.Path('android/myfinance-v3')
+          specs = [
+              ('source.b64.part00', '72bf33d29ab195612e5d0a1079bb3c4c6a65cb556985dd5499dc5532b131eb42'),
+              ('source.b64.part01', '3e91418f4faed27a0df71e34020e36fcfa3d5981088776a55537deb4c244bda7'),
+              ('source.b64.part02', 'b81af3ca30b6d99bfbd7e9eddc4188d54a5ce60d86b289f2f722c1e62577d7c8'),
+              ('source.part03.b64', '4fd0032ceee1acf3199b7305140d00505a9e0be7320edf76c0efa9a798da2bcd'),
+              ('source.part04.b64', '32507afb955258a1bd9744e197aa16d3e32999c23b0e377bc0f430efea5ba73b'),
+          ]
+          ok = True
+          for index, (name, expected) in enumerate(specs):
+              raw = (root / name).read_text(encoding='utf-8')
+              compact = ''.join(raw.split())
+              invalid = sorted(set(re.sub(r'[A-Za-z0-9+/=]', '', compact)))
+              try:
+                  data = base64.b64decode(compact, validate=True)
+              except binascii.Error as exc:
+                  print(f'BASE64_FAIL {name}: chars={len(compact)} invalid={invalid!r} tail={compact[-32:]!r} error={exc}')
+                  ok = False
+                  continue
+              actual = hashlib.sha256(data).hexdigest()
+              print(f'PART {index:02d} {name}: encoded={len(compact)} decoded={len(data)} sha256={actual} expected={expected}')
+              pathlib.Path(f'/tmp/myfinance-parts/part{index:02d}').write_bytes(data)
+              if actual != expected:
+                  print(f'CHECKSUM_FAIL {name}')
+                  ok = False
+          if not ok:
+              sys.exit(2)
+          PY
           cat /tmp/myfinance-parts/part00 /tmp/myfinance-parts/part01 /tmp/myfinance-parts/part02 /tmp/myfinance-parts/part03 /tmp/myfinance-parts/part04 > /tmp/sinergy-myfinance-v3-source.tar.xz
           echo '6183c5f54d2caaac0f7dc137ac6a1bb18786f707aaac94d8f05ce4672f61d811  /tmp/sinergy-myfinance-v3-source.tar.xz' | sha256sum -c -
           xz -t /tmp/sinergy-myfinance-v3-source.tar.xz
@@ -60,7 +84,7 @@ jobs:
           set -o pipefail
           gradle clean assembleRelease assembleDebug --stacktrace --warning-mode all 2>&1 | tee reports/gradle-build-ci.log
 
-      - name: Verify compiled packages
+      - name: Verify compiled packages and collect signing tools
         working-directory: /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30
         shell: bash
         run: |
@@ -69,16 +93,18 @@ jobs:
           test -f app/build/outputs/apk/debug/app-debug.apk
           unzip -t app/build/outputs/apk/release/app-release-unsigned.apk | tee reports/apk-unzip-ci.txt
           sha256sum app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/debug/app-debug.apk | tee reports/apk-sha256-ci.txt
+          mkdir -p reports/android-signing-tools/lib
+          cp "$ANDROID_HOME/build-tools/34.0.0/apksigner" reports/android-signing-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/zipalign" reports/android-signing-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/lib/apksigner.jar" reports/android-signing-tools/lib/
 
       - name: Upload compiled artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SINERGY-MYFINANCE-v3.0.0-compiled
           path: |
             /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/app/build/outputs/apk/release/app-release-unsigned.apk
             /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/app/build/outputs/apk/debug/app-debug.apk
-            /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/reports/unit-tests-ci.tap
-            /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/reports/gradle-build-ci.log
-            /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/reports/apk-unzip-ci.txt
-            /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/reports/apk-sha256-ci.txt
-          if-no-files-found: error
+            /tmp/myfinance-src/SINERGY_MYFINANCE_ANDROID_V30/reports
+          if-no-files-found: warn

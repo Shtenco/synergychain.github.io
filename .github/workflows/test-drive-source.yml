@@ -1,0 +1,25 @@
+name: Test SINERGY source from Drive
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-drive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download source archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 -o /tmp/source.tar.xz 'https://drive.usercontent.google.com/download?id=1WeDUeRpkXf1l39wUiEyjd7lNprY3y5-M&export=download&confirm=t'
+          ls -l /tmp/source.tar.xz
+          file /tmp/source.tar.xz
+          sha256sum /tmp/source.tar.xz
+          xz -t /tmp/source.tar.xz
+          echo '6183c5f54d2caaac0f7dc137ac6a1bb18786f707aaac94d8f05ce4672f61d811  /tmp/source.tar.xz' | sha256sum -c -

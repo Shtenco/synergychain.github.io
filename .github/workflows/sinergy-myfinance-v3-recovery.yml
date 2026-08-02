@@ -1,0 +1,206 @@
+name: Build installable SINERGY-MYFINANCE v3 release
+
+on:
+  push:
+    branches: [build/sinergy-myfinance-v3-final-clean]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recover and validate V3 Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, re
+          parts = sorted(Path('android/myfinance-v3-final').glob('part*.b64'))
+          if not parts:
+              raise SystemExit('V3 source parts not found')
+          encoded = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+          encoded = re.sub(r'\s+', '', encoded)
+          raw = base64.b64decode(encoded, validate=True)
+          out = Path('/tmp/SINERGY-MYFINANCE-v3-source.tar.xz')
+          out.write_bytes(raw)
+          print('parts:', [p.name for p in parts])
+          print('archive bytes:', len(raw))
+          print('archive sha256:', hashlib.sha256(raw).hexdigest())
+          PY
+          xz -t /tmp/SINERGY-MYFINANCE-v3-source.tar.xz
+          rm -rf /tmp/myfinance-v3 && mkdir -p /tmp/myfinance-v3
+          tar -xJf /tmp/SINERGY-MYFINANCE-v3-source.tar.xz -C /tmp/myfinance-v3
+          APP_GRADLE="$(find /tmp/myfinance-v3 -type f -path '*/app/build.gradle' | head -n1)"
+          test -n "$APP_GRADLE"
+          ROOT="$(dirname "$(dirname "$APP_GRADLE")")"
+          echo "$ROOT" > /tmp/project-root.txt
+          echo "Recovered project root: $ROOT"
+          test -f "$ROOT/app/src/main/AndroidManifest.xml"
+          test -f "$ROOT/app/src/main/java/ai/sinergy/myfinance/WalletVault.java"
+          test -f "$ROOT/app/src/main/java/ai/sinergy/myfinance/BitcoinEngine.java"
+          test -f "$ROOT/app/src/main/java/ai/sinergy/myfinance/EvmEngine.java"
+          test -f "$ROOT/app/src/main/java/ai/sinergy/myfinance/SolanaEngine.java"
+
+      - name: Pin release identity and Bouncy Castle 1.84
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import re, sys
+          root = Path(sys.argv[1])
+          for path in list(root.rglob('*.gradle')) + list(root.rglob('*.gradle.kts')):
+              text = path.read_text(encoding='utf-8')
+              old = text
+              for module in ('bcprov', 'bcpkix', 'bcutil', 'bcpg'):
+                  text = re.sub(rf'org\.bouncycastle:{module}-(?:jdk15on|jdk15to18|jdk18on):[0-9A-Za-z.\-]+',
+                                f'org.bouncycastle:{module}-jdk18on:1.84', text)
+              text = re.sub(r"versionCode\s+\d+", "versionCode 5", text)
+              text = re.sub(r"versionName\s+['\"][^'\"]+['\"]", "versionName '3.0.0'", text)
+              if text != old:
+                  path.write_text(text, encoding='utf-8')
+                  print('patched', path)
+          app = root / 'app' / 'build.gradle'
+          txt = app.read_text(encoding='utf-8')
+          if "applicationId 'ai.sinergy.myfinance'" not in txt and 'applicationId "ai.sinergy.myfinance"' not in txt:
+              raise SystemExit('Unexpected applicationId in V3 source')
+          if 'bcprov-jdk18on:1.84' not in '\n'.join(p.read_text(encoding='utf-8') for p in root.rglob('*.gradle')):
+              print('Bouncy Castle is transitive or not directly declared; dependency report will verify resolution')
+          PY
+          grep -RInE 'org\.bouncycastle:|applicationId|versionCode|versionName' "$ROOT"/*.gradle "$ROOT"/app/*.gradle || true
+
+      - name: Run V3 JavaScript and contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          if [ -f "$ROOT/tests/run-tests.js" ]; then
+            node "$ROOT/tests/run-tests.js" | tee /tmp/v3-tests.log
+          else
+            echo 'No Node test runner in recovered source' | tee /tmp/v3-tests.log
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64"
+
+      - name: Set up Gradle 8.2.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Verify dependencies and compile release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          gradle -p "$ROOT" --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /tmp/release-dependencies.txt
+          if grep -q 'org.bouncycastle:bcprov' /tmp/release-dependencies.txt; then
+            grep 'org.bouncycastle:' /tmp/release-dependencies.txt | tee /tmp/bouncycastle-resolution.txt
+            grep -Eq 'org\.bouncycastle:bcprov-jdk18on:1\.84' /tmp/release-dependencies.txt
+          else
+            echo 'No external Bouncy Castle provider resolved' | tee /tmp/bouncycastle-resolution.txt
+          fi
+          gradle -p "$ROOT" --no-daemon clean testReleaseUnitTest assembleRelease --stacktrace | tee /tmp/android-build.log
+          UNSIGNED="$(find "$ROOT/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*release*.apk' | head -n1)"
+          test -f "$UNSIGNED"
+          echo "$UNSIGNED" > /tmp/unsigned-apk.txt
+
+      - name: Generate release key, align and sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          UNSIGNED="$(cat /tmp/unsigned-apk.txt)"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          OUT="$ROOT/final-release"
+          mkdir -p "$OUT"
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$OUT/SINERGY-MYFINANCE-release.jks" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias sinergy-myfinance-release \
+            -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 9125 \
+            -dname "CN=SINERGY-MYFINANCE Release, OU=Mobile Security, O=SINERGY, L=Kostanay, ST=Kostanay, C=KZ"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$OUT/SINERGY-MYFINANCE-v3.0.0-aligned.apk"
+          "$BT/zipalign" -c -p 4 "$OUT/SINERGY-MYFINANCE-v3.0.0-aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$OUT/SINERGY-MYFINANCE-release.jks" \
+            --ks-key-alias sinergy-myfinance-release \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" \
+            "$OUT/SINERGY-MYFINANCE-v3.0.0-aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APKSIGNER-VERIFY.txt"
+          "$BT/aapt" dump badging "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APK-BADGING.txt"
+          unzip -t "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APK-ZIP-INTEGRITY.txt"
+          sha256sum "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/SINERGY-MYFINANCE-v3.0.0-SHA256.txt"
+          keytool -printcert -jarfile "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/SIGNING-CERTIFICATE.txt"
+          printf '%s\n' "$PASS" > "$OUT/SIGNING-KEY-PASSWORD.txt"
+          cp /tmp/release-dependencies.txt "$OUT/RELEASE-DEPENDENCIES.txt"
+          cp /tmp/bouncycastle-resolution.txt "$OUT/BOUNCY-CASTLE-RESOLUTION.txt"
+          cp /tmp/android-build.log "$OUT/ANDROID-BUILD.log"
+          cp /tmp/v3-tests.log "$OUT/V3-TESTS.log"
+          rm -f "$OUT/SINERGY-MYFINANCE-v3.0.0-aligned.apk"
+
+      - name: Install APK on Android 14 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            ROOT="$(cat /tmp/project-root.txt)"
+            APK="$ROOT/final-release/SINERGY-MYFINANCE-v3.0.0.apk"
+            adb install -r "$APK"
+            adb shell pm path ai.sinergy.myfinance | tee "$ROOT/final-release/DEVICE-INSTALL.txt"
+            adb shell dumpsys package ai.sinergy.myfinance | grep -E 'versionCode=|versionName=|signatures=' | tee -a "$ROOT/final-release/DEVICE-INSTALL.txt"
+            test -n "$(adb shell pm path ai.sinergy.myfinance)"
+            if find "$ROOT/app/src/androidTest" -type f 2>/dev/null | grep -q .; then
+              gradle -p "$ROOT" --no-daemon connectedReleaseAndroidTest --stacktrace | tee "$ROOT/final-release/INSTRUMENTATION-TESTS.log"
+            else
+              echo 'No androidTest sources; physical package installation verified on API 34 emulator.' | tee "$ROOT/final-release/INSTRUMENTATION-TESTS.log"
+            fi
+
+      - name: Upload final signed and device-tested release
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-MYFINANCE-v3.0.0-installable
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            /tmp/myfinance-v3/**/final-release/SINERGY-MYFINANCE-v3.0.0.apk
+            /tmp/myfinance-v3/**/final-release/APKSIGNER-VERIFY.txt
+            /tmp/myfinance-v3/**/final-release/APK-BADGING.txt
+            /tmp/myfinance-v3/**/final-release/APK-ZIP-INTEGRITY.txt
+            /tmp/myfinance-v3/**/final-release/SINERGY-MYFINANCE-v3.0.0-SHA256.txt
+            /tmp/myfinance-v3/**/final-release/SIGNING-CERTIFICATE.txt
+            /tmp/myfinance-v3/**/final-release/SINERGY-MYFINANCE-release.jks
+            /tmp/myfinance-v3/**/final-release/SIGNING-KEY-PASSWORD.txt
+            /tmp/myfinance-v3/**/final-release/RELEASE-DEPENDENCIES.txt
+            /tmp/myfinance-v3/**/final-release/BOUNCY-CASTLE-RESOLUTION.txt
+            /tmp/myfinance-v3/**/final-release/ANDROID-BUILD.log
+            /tmp/myfinance-v3/**/final-release/V3-TESTS.log
+            /tmp/myfinance-v3/**/final-release/DEVICE-INSTALL.txt
+            /tmp/myfinance-v3/**/final-release/INSTRUMENTATION-TESTS.log

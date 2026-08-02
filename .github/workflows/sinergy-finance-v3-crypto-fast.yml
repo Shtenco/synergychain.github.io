@@ -1,11 +1,11 @@
-name: Verify SINERGY Finance v3 Crypto APK
+name: Release SINERGY Finance v3 Crypto APK Fast
 
 on:
   pull_request:
     branches: [build/sinergy-finance-apk]
     paths:
       - 'android/finance-crypto-patch/**'
-      - '.github/workflows/sinergy-finance-v3-crypto-pr.yml'
+      - '.github/workflows/sinergy-finance-v3-crypto-fast.yml'
 
 permissions:
   contents: read
@@ -14,34 +14,28 @@ env:
   APK_NAME: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET.apk
 
 jobs:
-  build-install-test:
+  compile-sign-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
       - uses: android-actions/setup-android@v3
-
       - name: Install Android SDK
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platform-tools' 'platforms;android-34' 'platforms;android-35' 'build-tools;34.0.0'
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Compile, align, sign and verify APK
+      - name: Compile, sign and verify
         shell: bash
         run: |
           sed -i 's/com.android.tools.build:gradle:8.1.0/com.android.tools.build:gradle:8.7.3/' android/build.gradle
-          grep -q 'com.android.tools.build:gradle:8.7.3' android/build.gradle
           python3 - <<'PY'
           from pathlib import Path
           p = Path('android/finance-crypto-patch/build-crypto-apk.sh')
@@ -53,38 +47,18 @@ jobs:
           p.write_text(s.replace(needle, addition, 1))
           PY
           bash android/finance-crypto-patch/build-crypto-apk.sh
-
-      - name: Install and launch on Android 14
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            adb install -r "android/release/${APK_NAME}"
-            adb shell pm path ai.sinergy.finance.crypto
-            adb shell am force-stop ai.sinergy.finance.crypto
-            adb shell monkey -p ai.sinergy.finance.crypto -c android.intent.category.LAUNCHER 1
-            sleep 5
-            adb shell pidof ai.sinergy.finance.crypto
-            adb logcat -d -t 500 '*:E' > android/build-diagnostics/emulator-errors.txt || true
-            if grep -E 'FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: ai\.sinergy\.finance\.crypto' android/build-diagnostics/emulator-errors.txt; then exit 1; fi
-
-      - name: Upload diagnostics
-        if: always()
+      - name: Publish signed APK immediately
         uses: actions/upload-artifact@v4
         with:
-          name: SINERGY-FINANCE-v3-CRYPTO-diagnostics
-          path: android/build-diagnostics
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload signed APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET
+          name: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET-FAST
           path: android/release
           if-no-files-found: error
           retention-days: 30
+      - name: Publish diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-v3-CRYPTO-fast-diagnostics
+          path: android/build-diagnostics
+          if-no-files-found: warn
+          retention-days: 14

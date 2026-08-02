@@ -45,6 +45,12 @@ jobs:
           rootProject.name = 'WalletWarmup'
           include ':app'
           EOF
+          cat > /tmp/warmup/gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.suppressUnsupportedCompileSdk=34
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+          EOF
           cat > /tmp/warmup/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.1.0' apply false

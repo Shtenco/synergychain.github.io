@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 APK_NAME='SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET.apk'
 rm -rf android/app/src android/app/build android/build-diagnostics android/release
 mkdir -p android/build-diagnostics android/release
 exec > >(tee android/build-diagnostics/ci-build.log) 2>&1
 
+echo '== Restore verified SINERGY Finance base =='
 cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/v1.tar.xz
 tar -xJf /tmp/v1.tar.xz -C android/app
 cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/v2.patch.xz
@@ -31,6 +32,7 @@ echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/v21
 xz -dc /tmp/v21.patch.xz > /tmp/v21.patch
 (cd android/app && patch --batch -p1 < /tmp/v21.patch)
 
+echo '== Apply SINERGY Finance v2.2 and native Crypto Layer =='
 base64 -d android/finance-crypto-patch/v22-supplement.tar.xz.b64 > /tmp/v22.tar.xz
 echo '0e22a9bc73d4dbce71433e7212fa02377e7644fbc15a8f2102e13187d770b5e0  /tmp/v22.tar.xz' | sha256sum -c -
 tar -xJf /tmp/v22.tar.xz -C android
@@ -39,6 +41,12 @@ echo 'f5e8eca8bf2ba63ef700c6b2dcc4f5a36d6e00c5ac26503c0439145090a573ba  /tmp/cry
 xz -t /tmp/crypto.tar.xz
 tar -xJf /tmp/crypto.tar.xz -C android
 
+base64 -d android/finance-crypto-patch/fix01.tar.xz.b64 > /tmp/fix01.tar.xz
+echo '206ac116a6b81515c14b0ca99d39090d5746ebff1959c4334bec8f15af7c52a8  /tmp/fix01.tar.xz' | sha256sum -c -
+xz -t /tmp/fix01.tar.xz
+tar -xJf /tmp/fix01.tar.xz -C android
+
+echo '== Validate source overlay and testnet guard =='
 for f in WalletVault EvmRpcClient EvmTransactionService ChainIndexer NativeWalletBridge PasskeyManager SafeTreasuryClient SmartAccountClient; do
   test -f "android/app/src/main/java/ai/sinergy/finance/wallet/${f}.java"
 done
@@ -48,15 +56,21 @@ grep -q "applicationId 'ai.sinergy.finance.crypto'" android/app/build.gradle
 grep -q "versionName '3.0.0-crypto-testnet'" android/app/build.gradle
 grep -q 'SinergyWalletNative' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
 grep -q 'MAINNET_BLOCKED' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+grep -q '11155111' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+grep -q '80002' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+grep -q '84532' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
 
 for js in app v2 v21 v22 wallet finance-core; do node --check "android/app/src/main/assets/www/js/${js}.js"; done
 (cd android && node tests/run-tests.js) | tee android/build-diagnostics/unit-tests.tap
 
+echo '== Compile native Android binaries =='
 gradle -p android clean assembleRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
 UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'
 ALIGNED='android/release/app-release-aligned.apk'
 FINAL="android/release/${APK_NAME}"
 test -f "$UNSIGNED"
+
+echo '== Align and sign APK with V1/V2/V3 =='
 PASS="$(openssl rand -hex 24)"
 keytool -genkeypair -noprompt -keystore /tmp/sinergy-crypto-testnet.jks \
   -storepass "$PASS" -keypass "$PASS" -alias sinergy-crypto-testnet \
@@ -68,6 +82,7 @@ keytool -genkeypair -noprompt -keystore /tmp/sinergy-crypto-testnet.jks \
   --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
   --out "$FINAL" "$ALIGNED"
+
 "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee android/build-diagnostics/signature.txt
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 "$FINAL" | tee android/build-diagnostics/zipalign.txt
 "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$FINAL" | tee android/build-diagnostics/badging.txt

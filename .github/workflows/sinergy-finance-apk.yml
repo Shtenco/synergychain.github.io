@@ -34,14 +34,18 @@ jobs:
         distribution: temurin
         java-version: '17'
 
-    - name: Restore and upgrade application sources
+    - name: Restore exact v2.1 sources
+      id: restore
       shell: bash
       run: |
+        mkdir -p android/build-diagnostics
+        exec > >(tee android/build-diagnostics/restore.log) 2>&1
+        set -x
         cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v1.tar.xz
         tar -xJf /tmp/sinergy-finance-v1.tar.xz -C android/app
         cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v2.patch.xz
         xz -dc /tmp/sinergy-finance-v2.patch.xz > /tmp/sinergy-finance-v2.patch
-        (cd android/app && patch -p1 < /tmp/sinergy-finance-v2.patch)
+        (cd android/app && patch --batch --verbose -p1 < /tmp/sinergy-finance-v2.patch)
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
         cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
@@ -61,20 +65,25 @@ jobs:
           android/finance-bundle/v21safe.part09
           android/finance-bundle/v21safe.part10
         )
-        echo '=== V2.1 PART SIZES ==='
-        wc -c "${V21_PARTS[@]}"
-        echo '=== V2.1 PART SHA256 ==='
-        sha256sum "${V21_PARTS[@]}"
+        wc -c "${V21_PARTS[@]}" | tee android/build-diagnostics/v21-part-sizes.txt
+        sha256sum "${V21_PARTS[@]}" | tee android/build-diagnostics/v21-part-checksums.txt
         cat "${V21_PARTS[@]}" > /tmp/sinergy-finance-v21.patch.xz.b64
-        echo '=== V2.1 FULL BASE64 ==='
-        wc -c /tmp/sinergy-finance-v21.patch.xz.b64
-        sha256sum /tmp/sinergy-finance-v21.patch.xz.b64
         echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/sinergy-finance-v21.patch.xz.b64' | sha256sum -c -
         base64 -d /tmp/sinergy-finance-v21.patch.xz.b64 > /tmp/sinergy-finance-v21.patch.xz
         echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/sinergy-finance-v21.patch.xz' | sha256sum -c -
         xz -t /tmp/sinergy-finance-v21.patch.xz
         xz -dc /tmp/sinergy-finance-v21.patch.xz > /tmp/sinergy-finance-v21.patch
-        (cd android/app && patch -p1 < /tmp/sinergy-finance-v21.patch)
+        set +e
+        (cd android/app && patch --batch --verbose -p1 < /tmp/sinergy-finance-v21.patch)
+        PATCH_STATUS=$?
+        set -e
+        echo "patch_status=$PATCH_STATUS" | tee android/build-diagnostics/patch-status.txt
+        find android/app \( -name '*.rej' -o -name '*.orig' \) -print | tee android/build-diagnostics/reject-files.txt || true
+        if [ "$PATCH_STATUS" -ne 0 ]; then
+          cp /tmp/sinergy-finance-v21.patch android/build-diagnostics/v21.patch
+          tar -czf android/build-diagnostics/rejected-state.tar.gz android/app/src android/app/build.gradle 2>/dev/null || true
+          exit "$PATCH_STATUS"
+        fi
         test -f android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/java/ai/sinergy/finance/MainActivity.java
         test -f android/app/src/main/assets/www/js/finance-core.js
@@ -95,38 +104,27 @@ jobs:
         node --check android/app/src/main/assets/www/js/v21.js
 
     - name: Build debug APK
-      id: gradle_build
       shell: bash
       run: |
         export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
-        mkdir -p android/build-diagnostics
-        set +e
-        {
-          echo "JAVA_HOME=$JAVA_HOME"
-          "$JAVA_HOME/bin/java" -version
-          gradle --version
-          gradle -p android clean assembleDebug --stacktrace --info
-        } > android/build-diagnostics/build.log 2>&1
-        status=$?
-        cat android/build-diagnostics/build.log
-        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-        exit "$status"
+        gradle -p android clean assembleDebug --stacktrace --info 2>&1 | tee android/build-diagnostics/build.log
 
     - name: Verify APK
       if: success()
+      shell: bash
       run: |
         test -f android/app/build/outputs/apk/debug/app-debug.apk
-        unzip -t android/app/build/outputs/apk/debug/app-debug.apk
+        unzip -t android/app/build/outputs/apk/debug/app-debug.apk | tee android/build-diagnostics/apk-integrity.txt
         unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep 'assets/www/js/v21.js'
         unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep 'assets/www/js/finance-core.js'
         sha256sum android/app/build/outputs/apk/debug/app-debug.apk | tee android/app/build/outputs/apk/debug/SHA256SUMS.txt
 
-    - name: Upload build diagnostics
+    - name: Upload diagnostics
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: SINERGY-FINANCE-v2.1-build-diagnostics
-        path: android/build-diagnostics/build.log
+        path: android/build-diagnostics
         if-no-files-found: warn
 
     - name: Upload APK

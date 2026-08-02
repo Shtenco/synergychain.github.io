@@ -90,17 +90,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
           GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
           GRADLE_HOME="$(dirname "$(dirname "$GRADLE_BIN")")"
-          mkdir -p /tmp/sinergy-toolchain/gradle /tmp/sinergy-toolchain/android-sdk /tmp/sinergy-toolchain/gradle-user-home
+          mkdir -p /tmp/sinergy-toolchain/gradle /tmp/sinergy-toolchain/jdk17 /tmp/sinergy-toolchain/android-sdk /tmp/sinergy-toolchain/gradle-user-home
           cp -a "$GRADLE_HOME/." /tmp/sinergy-toolchain/gradle/
+          cp -a "$JAVA_HOME/." /tmp/sinergy-toolchain/jdk17/
           cp -a "$ANDROID_SDK_ROOT/build-tools" /tmp/sinergy-toolchain/android-sdk/
           cp -a "$ANDROID_SDK_ROOT/platforms" /tmp/sinergy-toolchain/android-sdk/
           cp -a "$ANDROID_SDK_ROOT/platform-tools" /tmp/sinergy-toolchain/android-sdk/
           cp -a "$ANDROID_SDK_ROOT/licenses" /tmp/sinergy-toolchain/android-sdk/
           cp -a "$HOME/.gradle/caches" /tmp/sinergy-toolchain/gradle-user-home/
           cp -a "$HOME/.gradle/native" /tmp/sinergy-toolchain/gradle-user-home/ 2>/dev/null || true
-          printf '%s\n' 'Gradle 8.2.1 / Android SDK 34 / build-tools 34.0.0 / warmed wallet dependencies' > /tmp/sinergy-toolchain/README.txt
+          printf '%s\n' 'Temurin JDK 17 / Gradle 8.2.1 / Android SDK 34 / build-tools 34.0.0 / warmed wallet dependencies' > /tmp/sinergy-toolchain/README.txt
           tar -C /tmp -czf /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz sinergy-toolchain
           sha256sum /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz > /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.sha256
           ls -lh /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz

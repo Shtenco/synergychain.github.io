@@ -1,0 +1,111 @@
+name: Direct install-test signed SINERGY-MYFINANCE V3 APK
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  direct-release-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download previously built signed release artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: '8832974008'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sinergy-artifact /tmp/final-acceptance
+          curl --fail --location \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            --output /tmp/sinergy-artifact.zip
+          unzip -q /tmp/sinergy-artifact.zip -d /tmp/sinergy-artifact
+          APK="$(find /tmp/sinergy-artifact -type f -name 'SINERGY-MYFINANCE-v3.0.0.apk' | head -n1)"
+          test -f "$APK"
+          cp "$APK" /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0.apk
+          echo "$APK" > /tmp/apk-path.txt
+          sha256sum "$APK" | tee /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0-SHA256.txt
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = "52a5d05f97bf3318b5f6a3eb01aac80ae4331bd69b69d95d1c435ec9f92d8811"
+          unzip -t "$APK" | tee /tmp/final-acceptance/APK-ZIP-INTEGRITY.txt
+          find /tmp/sinergy-artifact -type f \( -name 'SINERGY-MYFINANCE-release.jks' -o -name 'SIGNING-KEY-PASSWORD.txt' -o -name 'SIGNING-CERTIFICATE.txt' -o -name 'README-RELEASE.txt' \) -exec cp {} /tmp/final-acceptance/ \;
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android verification tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "build-tools;34.0.0" "platform-tools" "emulator" "platforms;android-34" "system-images;android-34;google_apis;x86_64"
+          APK="$(cat /tmp/apk-path.txt)"
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -p 4 "$APK" | tee /tmp/final-acceptance/ZIPALIGN-VERIFY.txt
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/final-acceptance/APKSIGNER-VERIFY.txt
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/final-acceptance/APK-BADGING.txt
+          grep -q "package: name='ai.sinergy.myfinance' versionCode='5' versionName='3.0.0'" /tmp/final-acceptance/APK-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/final-acceptance/APKSIGNER-VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/final-acceptance/APKSIGNER-VERIFY.txt
+
+      - name: Install and launch signed release on Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK="$(cat /tmp/apk-path.txt)"
+            adb wait-for-device
+            adb logcat -c
+            adb uninstall ai.sinergy.myfinance >/dev/null 2>&1 || true
+            adb install "$APK" | tee /tmp/final-acceptance/ADB-INSTALL.txt
+            grep -q 'Success' /tmp/final-acceptance/ADB-INSTALL.txt
+            adb shell pm path ai.sinergy.myfinance | tee -a /tmp/final-acceptance/ADB-INSTALL.txt
+            adb shell dumpsys package ai.sinergy.myfinance | grep -E 'versionCode=|versionName=' | tee -a /tmp/final-acceptance/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.myfinance/.MainActivity | tee /tmp/final-acceptance/ACTIVITY-LAUNCH.txt
+            sleep 8
+            PID="$(adb shell pidof ai.sinergy.myfinance | tr -d '\r')"
+            test -n "$PID"
+            echo "PID=$PID" | tee /tmp/final-acceptance/PROCESS-ALIVE.txt
+            adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | tee /tmp/final-acceptance/RESUMED-ACTIVITY.txt
+            grep -q 'ai.sinergy.myfinance/.MainActivity' /tmp/final-acceptance/RESUMED-ACTIVITY.txt
+            adb exec-out screencap -p > /tmp/final-acceptance/DEVICE-SCREENSHOT.png || true
+            adb logcat -d > /tmp/final-acceptance/DEVICE-LOGCAT.txt
+            if grep -E 'FATAL EXCEPTION|Process: ai.sinergy.myfinance.*has died|ANR in ai.sinergy.myfinance' /tmp/final-acceptance/DEVICE-LOGCAT.txt; then
+              exit 1
+            fi
+            echo 'SIGNED RELEASE INSTALL AND LAUNCH: PASS' | tee /tmp/final-acceptance/DEVICE-ACCEPTANCE.txt
+
+      - name: Package acceptance-tested delivery
+        if: always()
+        shell: bash
+        run: |
+          if [ -d /tmp/final-acceptance ]; then
+            cd /tmp
+            zip -9 -r SINERGY-MYFINANCE-v3.0.0-DEVICE-TESTED.zip final-acceptance >/dev/null
+          fi
+
+      - name: Upload device-tested release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-MYFINANCE-v3.0.0-DEVICE-TESTED
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            /tmp/final-acceptance/*
+            /tmp/SINERGY-MYFINANCE-v3.0.0-DEVICE-TESTED.zip

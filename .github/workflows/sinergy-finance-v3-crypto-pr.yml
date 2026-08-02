@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: android-actions/setup-android@v3
 
@@ -42,6 +42,16 @@ jobs:
         run: |
           sed -i 's/com.android.tools.build:gradle:8.1.0/com.android.tools.build:gradle:8.7.3/' android/build.gradle
           grep -q 'com.android.tools.build:gradle:8.7.3' android/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/finance-crypto-patch/build-crypto-apk.sh')
+          s = p.read_text()
+          needle = "tar -xJf /tmp/fix01.tar.xz -C android\n"
+          addition = needle + "\nbase64 -d android/finance-crypto-patch/fix02.tar.xz.b64 > /tmp/fix02.tar.xz\necho '1912e74bff15c16ece19982ad440f0c305a0f22ff531feabf7bb41e9522d027e  /tmp/fix02.tar.xz' | sha256sum -c -\nxz -t /tmp/fix02.tar.xz\ntar -xJf /tmp/fix02.tar.xz -C android\n"
+          if needle not in s:
+              raise SystemExit('fix01 overlay anchor missing')
+          p.write_text(s.replace(needle, addition, 1))
+          PY
           bash android/finance-crypto-patch/build-crypto-apk.sh
 
       - name: Install and launch on Android 14

@@ -34,20 +34,23 @@ jobs:
         distribution: temurin
         java-version: '17'
 
-    - name: Restore application sources
+    - name: Restore and upgrade application sources
       shell: bash
       run: |
-        cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/sinergy-finance.tar.xz
-        tar -xJf /tmp/sinergy-finance.tar.xz -C android/app
+        cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v1.tar.xz
+        tar -xJf /tmp/sinergy-finance-v1.tar.xz -C android/app
+        cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v2.patch.xz
+        xz -dc /tmp/sinergy-finance-v2.patch.xz > /tmp/sinergy-finance-v2.patch
+        (cd android/app && patch -p1 < /tmp/sinergy-finance-v2.patch)
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
-        sed -i 's|@drawable/ic_launcher_foreground_round|@drawable/ic_launcher_foreground|g' android/app/src/main/AndroidManifest.xml
-        sed -i '/<uses-permission android:name="android.permission.INTERNET" \/>/a\    <uses-permission android:name="android.permission.VIBRATE" />' android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/java/ai/sinergy/finance/MainActivity.java
-        test -f android/app/src/main/assets/www/index.html
-        ! grep -q 'ic_launcher_foreground_round' android/app/src/main/AndroidManifest.xml
+        test -f android/app/src/main/assets/www/js/v2.js
         grep -q 'android.permission.VIBRATE' android/app/src/main/AndroidManifest.xml
+        grep -q 'FileProvider' android/app/src/main/AndroidManifest.xml
+        grep -q 'scanReceipt' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
+        grep -q 'AI-командный центр' android/app/src/main/assets/www/index.html
 
     - name: Build debug APK
       id: gradle_build
@@ -78,7 +81,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: SINERGY-FINANCE-build-diagnostics
+        name: SINERGY-FINANCE-v2-build-diagnostics
         path: android/build-diagnostics/build.log
         if-no-files-found: warn
 
@@ -86,7 +89,7 @@ jobs:
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: SINERGY-FINANCE-v1.0.0
+        name: SINERGY-FINANCE-v2.0.0
         path: |
           android/app/build/outputs/apk/debug/app-debug.apk
           android/app/build/outputs/apk/debug/SHA256SUMS.txt

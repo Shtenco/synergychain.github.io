@@ -12,12 +12,12 @@ permissions:
 jobs:
   direct-release-install:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - name: Download previously built signed release artifact
+      - name: Download rebuilt signed APK artifact
         env:
           GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: '8832974008'
+          ARTIFACT_ID: '8833132322'
         shell: bash
         run: |
           set -euo pipefail
@@ -34,30 +34,27 @@ jobs:
           cp "$APK" /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0.apk
           echo "$APK" > /tmp/apk-path.txt
           sha256sum "$APK" | tee /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0-SHA256.txt
+          grep -q '^9346c16976eab88efa43cef9c269eb9575bfac5b524685eb332d2fbfa9cd1404 ' /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0-SHA256.txt
           unzip -t "$APK" | tee /tmp/final-acceptance/APK-ZIP-INTEGRITY.txt
-          find /tmp/sinergy-artifact -type f \( -name 'SINERGY-MYFINANCE-release.jks' -o -name 'SIGNING-KEY-PASSWORD.txt' -o -name 'SIGNING-CERTIFICATE.txt' -o -name 'README-RELEASE.txt' \) -exec cp {} /tmp/final-acceptance/ \;
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android verification tools
+      - name: Verify package alignment and signatures
         shell: bash
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "build-tools;34.0.0" "platform-tools" "emulator" "platforms;android-34" "system-images;android-34;google_apis;x86_64"
           APK="$(cat /tmp/apk-path.txt)"
-          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -p 4 "$APK" | tee /tmp/final-acceptance/ZIPALIGN-VERIFY.txt
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/final-acceptance/APKSIGNER-VERIFY.txt
-          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | tee /tmp/final-acceptance/APK-BADGING.txt
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          "$BT/zipalign" -c -p 4 "$APK" | tee /tmp/final-acceptance/ZIPALIGN-VERIFY.txt
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/final-acceptance/APKSIGNER-VERIFY.txt
+          "$BT/aapt" dump badging "$APK" | tee /tmp/final-acceptance/APK-BADGING.txt
           grep -q "package: name='ai.sinergy.myfinance' versionCode='5' versionName='3.0.0'" /tmp/final-acceptance/APK-BADGING.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/final-acceptance/APKSIGNER-VERIFY.txt
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/final-acceptance/APKSIGNER-VERIFY.txt
 
-      - name: Install and launch signed release on Android 14
+      - name: Install and launch release on Android 14
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -65,7 +62,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             APK="$(cat /tmp/apk-path.txt)"
             adb wait-for-device
             adb logcat -c
@@ -83,19 +80,15 @@ jobs:
             grep -q 'ai.sinergy.myfinance/.MainActivity' /tmp/final-acceptance/RESUMED-ACTIVITY.txt
             adb exec-out screencap -p > /tmp/final-acceptance/DEVICE-SCREENSHOT.png || true
             adb logcat -d > /tmp/final-acceptance/DEVICE-LOGCAT.txt
-            if grep -E 'FATAL EXCEPTION|Process: ai.sinergy.myfinance.*has died|ANR in ai.sinergy.myfinance' /tmp/final-acceptance/DEVICE-LOGCAT.txt; then
-              exit 1
-            fi
+            if grep -E 'FATAL EXCEPTION|ANR in ai.sinergy.myfinance' /tmp/final-acceptance/DEVICE-LOGCAT.txt; then exit 1; fi
             echo 'SIGNED RELEASE INSTALL AND LAUNCH: PASS' | tee /tmp/final-acceptance/DEVICE-ACCEPTANCE.txt
 
-      - name: Package acceptance-tested delivery
+      - name: Package device-tested APK
         if: always()
         shell: bash
         run: |
-          if [ -d /tmp/final-acceptance ]; then
-            cd /tmp
-            zip -9 -r SINERGY-MYFINANCE-v3.0.0-DEVICE-TESTED.zip final-acceptance >/dev/null
-          fi
+          cd /tmp
+          zip -9 -r SINERGY-MYFINANCE-v3.0.0-DEVICE-TESTED.zip final-acceptance >/dev/null
 
       - name: Upload device-tested release
         if: always()

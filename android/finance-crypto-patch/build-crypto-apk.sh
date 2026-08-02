@@ -46,11 +46,13 @@ echo '206ac116a6b81515c14b0ca99d39090d5746ebff1959c4334bec8f15af7c52a8  /tmp/fix
 xz -t /tmp/fix01.tar.xz
 tar -xJf /tmp/fix01.tar.xz -C android
 
-echo '== Configure modern compile SDK while retaining target SDK 34 =='
+echo '== Configure Android API levels for modern Crypto dependencies =='
 sdkmanager 'platforms;android-35'
 sed -i 's/compileSdk 34/compileSdk 35/' android/app/build.gradle
+sed -i 's/minSdk 24/minSdk 26/' android/app/build.gradle
 grep -q '^android.suppressUnsupportedCompileSdk=35$' android/gradle.properties || echo 'android.suppressUnsupportedCompileSdk=35' >> android/gradle.properties
 grep -q 'compileSdk 35' android/app/build.gradle
+grep -q 'minSdk 26' android/app/build.gradle
 grep -q 'targetSdk 34' android/app/build.gradle
 
 echo '== Validate source overlay and testnet guard =='

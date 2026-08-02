@@ -39,7 +39,10 @@ jobs:
 
       - name: Compile, align, sign and verify APK
         shell: bash
-        run: bash android/finance-crypto-patch/build-crypto-apk.sh
+        run: |
+          sed -i "s/version '8.1.0'/version '8.7.3'/" android/build.gradle
+          grep -q "version '8.7.3'" android/build.gradle
+          bash android/finance-crypto-patch/build-crypto-apk.sh
 
       - name: Install and launch on Android 14
         uses: reactivecircus/android-emulator-runner@v2

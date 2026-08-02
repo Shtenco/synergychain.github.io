@@ -45,7 +45,14 @@ jobs:
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
         cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+        echo '=== V2.1 PART SIZES ==='
+        wc -c android/finance-bundle/v21safe.part*
+        echo '=== V2.1 PART SHA256 ==='
+        sha256sum android/finance-bundle/v21safe.part*
         cat android/finance-bundle/v21safe.part* > /tmp/sinergy-finance-v21.patch.xz.b64
+        echo '=== V2.1 FULL BASE64 ==='
+        wc -c /tmp/sinergy-finance-v21.patch.xz.b64
+        sha256sum /tmp/sinergy-finance-v21.patch.xz.b64
         echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/sinergy-finance-v21.patch.xz.b64' | sha256sum -c -
         base64 -d /tmp/sinergy-finance-v21.patch.xz.b64 > /tmp/sinergy-finance-v21.patch.xz
         echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/sinergy-finance-v21.patch.xz' | sha256sum -c -

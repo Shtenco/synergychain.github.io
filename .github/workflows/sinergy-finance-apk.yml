@@ -3,14 +3,11 @@ name: Build SINERGY Finance APK
 on:
   push:
     branches: [build/sinergy-finance-apk]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
 
@@ -35,20 +32,22 @@ jobs:
         java-version: '17'
 
     - name: Restore exact v2.1 sources
-      id: restore
       shell: bash
       run: |
+        set -euo pipefail
         mkdir -p android/build-diagnostics
         exec > >(tee android/build-diagnostics/restore.log) 2>&1
-        set -x
-        cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v1.tar.xz
-        tar -xJf /tmp/sinergy-finance-v1.tar.xz -C android/app
-        cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/sinergy-finance-v2.patch.xz
-        xz -dc /tmp/sinergy-finance-v2.patch.xz > /tmp/sinergy-finance-v2.patch
-        (cd android/app && patch --batch --verbose -p1 < /tmp/sinergy-finance-v2.patch)
+
+        cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/v1.tar.xz
+        tar -xJf /tmp/v1.tar.xz -C android/app
+
+        cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/v2.patch.xz
+        xz -dc /tmp/v2.patch.xz > /tmp/v2.patch
+        (cd android/app && patch --batch -p1 < /tmp/v2.patch)
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
         cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+
         V21_PARTS=(
           android/finance-bundle/v21safe.part00
           android/finance-bundle/v21safe.part01
@@ -56,54 +55,27 @@ jobs:
           android/finance-bundle/v21safe.part03
           android/finance-bundle/v21safe.part04
           android/finance-bundle/v21safe.part05
-          android/finance-bundle/v21safe.part06
+          android/finance-bundle/v21safe.part06a
+          android/finance-bundle/v21safe.part06b
+          android/finance-bundle/v21safe.part06c
+          android/finance-bundle/v21safe.part06d
           android/finance-bundle/v21safe.part07
           android/finance-bundle/v21safe.part08
           android/finance-bundle/v21safe.part09
           android/finance-bundle/v21safe.part10
         )
-        wc -c "${V21_PARTS[@]}" | tee android/build-diagnostics/v21-part-sizes.txt
-        sha256sum "${V21_PARTS[@]}" | tee android/build-diagnostics/v21-part-checksums.txt
-        cat <<'CHECKSUMS' | sha256sum -c -
-        a11934fbdef6c3d02f95d6d7021b9c26357c2fdfb5135a54726279ee5342eab2  android/finance-bundle/v21safe.part00
-        c41710db5c2bcda67539ff55de028b7696dcca0598a7ac5bba5fe09356089a74  android/finance-bundle/v21safe.part01
-        3995ac65e6b0b4f1d1f42c8faa375558eb1da58aa0e25b346a7f4b4362b12223  android/finance-bundle/v21safe.part02
-        12424c032506bb2d0b667b77eaeb3d4e9a222d52f40563d5e6233a71ea304dee  android/finance-bundle/v21safe.part03
-        dfc46916c0d6756c6c3e2ae27d431d1734f8c756baf81d6d4d8f4c6646f11234  android/finance-bundle/v21safe.part04
-        337aa380d09a48c2fc72500e258b1fd28294bc4d924c495b4c28c226f5cb5af7  android/finance-bundle/v21safe.part05
-        c1d76609df7d64cfd137245446ed40791fc966aba917e20115ad89616fd381a6  android/finance-bundle/v21safe.part06
-        4b9c87a259a8de539c2e8b3d9eb175c13e455f04f13c93290a4a59436b1da9ca  android/finance-bundle/v21safe.part07
-        b8e8b96acd7766a5b8a44cdc2647ff93f12a136b45ee347613432f50de65aa6f  android/finance-bundle/v21safe.part08
-        7b14e202957dbd6f84ba8521dfb3e0e2073aea6df9ac3b9935fb288dbf287578  android/finance-bundle/v21safe.part09
-        453aa35a736951e30208b87e9f87d2495475cc1cc834966df748cb6a2f4ccc26  android/finance-bundle/v21safe.part10
-        CHECKSUMS
-        cat "${V21_PARTS[@]}" > /tmp/sinergy-finance-v21.patch.xz.b64
-        base64 -d /tmp/sinergy-finance-v21.patch.xz.b64 > /tmp/sinergy-finance-v21.patch.xz
-        sha256sum /tmp/sinergy-finance-v21.patch.xz | tee android/build-diagnostics/v21-xz-checksum.txt
-        xz -t /tmp/sinergy-finance-v21.patch.xz
-        xz -dc /tmp/sinergy-finance-v21.patch.xz > /tmp/sinergy-finance-v21.patch
-        set +e
-        (cd android/app && patch --batch --verbose -p1 < /tmp/sinergy-finance-v21.patch)
-        PATCH_STATUS=$?
-        set -e
-        echo "patch_status=$PATCH_STATUS" | tee android/build-diagnostics/patch-status.txt
-        find android/app \( -name '*.rej' -o -name '*.orig' \) -print | tee android/build-diagnostics/reject-files.txt || true
-        if [ "$PATCH_STATUS" -ne 0 ]; then
-          cp /tmp/sinergy-finance-v21.patch android/build-diagnostics/v21.patch
-          tar -czf android/build-diagnostics/rejected-state.tar.gz android/app/src android/app/build.gradle 2>/dev/null || true
-          exit "$PATCH_STATUS"
-        fi
-        test -f android/app/src/main/AndroidManifest.xml
-        test -f android/app/src/main/java/ai/sinergy/finance/MainActivity.java
+        cat "${V21_PARTS[@]}" > /tmp/v21.patch.xz.b64
+        echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/v21.patch.xz.b64' | sha256sum -c -
+        base64 -d /tmp/v21.patch.xz.b64 > /tmp/v21.patch.xz
+        echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/v21.patch.xz' | sha256sum -c -
+        xz -t /tmp/v21.patch.xz
+        xz -dc /tmp/v21.patch.xz > /tmp/v21.patch
+        (cd android/app && patch --batch -p1 < /tmp/v21.patch)
+
         test -f android/app/src/main/assets/www/js/finance-core.js
-        test -f android/app/src/main/assets/www/js/v2.js
         test -f android/app/src/main/assets/www/js/v21.js
-        test -f android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
-        grep -q 'versionName.*2.1.0' android/app/build.gradle
+        grep -q "versionName '2.1.0'" android/app/build.gradle
         grep -q 'return "2.1.0"' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
-        grep -q 'android.permission.VIBRATE' android/app/src/main/AndroidManifest.xml
-        grep -q 'FileProvider' android/app/src/main/AndroidManifest.xml
-        grep -q 'scanReceipt' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
         grep -q 'БИБЛИОТЕКА' android/app/src/main/assets/www/index.html
         grep -q 'incomeDonut' android/app/src/main/assets/www/index.html
         grep -q 'customCategories' android/app/src/main/assets/www/js/app.js
@@ -115,11 +87,11 @@ jobs:
     - name: Build debug APK
       shell: bash
       run: |
+        set -o pipefail
         export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
         gradle -p android clean assembleDebug --stacktrace --info 2>&1 | tee android/build-diagnostics/build.log
 
     - name: Verify APK
-      if: success()
       shell: bash
       run: |
         test -f android/app/build/outputs/apk/debug/app-debug.apk

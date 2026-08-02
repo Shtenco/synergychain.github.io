@@ -3,6 +3,8 @@ name: Build SINERGY-MYFINANCE v3 Wallet
 on:
   push:
     branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

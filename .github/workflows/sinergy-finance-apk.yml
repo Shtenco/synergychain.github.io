@@ -44,9 +44,11 @@ jobs:
         (cd android/app && patch -p1 < /tmp/sinergy-finance-v2.patch)
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
+        cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
         test -f android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/java/ai/sinergy/finance/MainActivity.java
         test -f android/app/src/main/assets/www/js/v2.js
+        test -f android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
         grep -q 'android.permission.VIBRATE' android/app/src/main/AndroidManifest.xml
         grep -q 'FileProvider' android/app/src/main/AndroidManifest.xml
         grep -q 'scanReceipt' android/app/src/main/java/ai/sinergy/finance/MainActivity.java

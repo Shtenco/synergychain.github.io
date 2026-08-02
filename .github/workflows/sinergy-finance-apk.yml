@@ -42,10 +42,12 @@ jobs:
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
         sed -i 's|@drawable/ic_launcher_foreground_round|@drawable/ic_launcher_foreground|g' android/app/src/main/AndroidManifest.xml
+        sed -i '/<uses-permission android:name="android.permission.INTERNET" \/>/a\    <uses-permission android:name="android.permission.VIBRATE" />' android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/AndroidManifest.xml
         test -f android/app/src/main/java/ai/sinergy/finance/MainActivity.java
         test -f android/app/src/main/assets/www/index.html
         ! grep -q 'ic_launcher_foreground_round' android/app/src/main/AndroidManifest.xml
+        grep -q 'android.permission.VIBRATE' android/app/src/main/AndroidManifest.xml
 
     - name: Build debug APK
       id: gradle_build

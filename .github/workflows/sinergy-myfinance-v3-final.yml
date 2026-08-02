@@ -3,6 +3,8 @@ name: Build and sign SINERGY-MYFINANCE v3 APK
 on:
   push:
     branches: [build/sinergy-myfinance-v3-final]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

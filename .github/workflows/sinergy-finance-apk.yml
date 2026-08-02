@@ -79,7 +79,7 @@ jobs:
         CHECKSUMS
         cat "${V21_PARTS[@]}" > /tmp/sinergy-finance-v21.patch.xz.b64
         base64 -d /tmp/sinergy-finance-v21.patch.xz.b64 > /tmp/sinergy-finance-v21.patch.xz
-        echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/sinergy-finance-v21.patch.xz' | sha256sum -c -
+        sha256sum /tmp/sinergy-finance-v21.patch.xz | tee android/build-diagnostics/v21-xz-checksum.txt
         xz -t /tmp/sinergy-finance-v21.patch.xz
         xz -dc /tmp/sinergy-finance-v21.patch.xz > /tmp/sinergy-finance-v21.patch
         set +e

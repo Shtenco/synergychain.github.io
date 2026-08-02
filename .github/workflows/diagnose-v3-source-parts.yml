@@ -3,6 +3,8 @@ name: Diagnose SINERGY-MYFINANCE V3 source parts
 on:
   push:
     branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -17,29 +19,23 @@ jobs:
           ls -l android/myfinance-v3/source* | tee /tmp/files.txt
           python3 - <<'PY'
           from pathlib import Path
-          import base64, binascii, hashlib, re, subprocess
+          import base64, hashlib, subprocess
           root=Path('android/myfinance-v3')
           sets={
             'continuous_00_05': [root/f'source.b64.part{i:02d}' for i in range(6)],
             'independent_00_05': [root/f'source.b64.part{i:02d}' for i in range(6)],
             'legacy_mix': [root/'source.b64.part00',root/'source.b64.part01',root/'source.b64.part02',root/'source.part03.b64',root/'source.part04.b64'],
           }
-          def clean(p):
-            s=''.join(p.read_text(encoding='utf-8').split())
-            return s
+          def clean(p): return ''.join(p.read_text(encoding='utf-8').split())
           results=[]
           for name, parts in sets.items():
             if not all(p.exists() for p in parts):
               results.append((name,'missing',0,'')); continue
             try:
               if name.startswith('continuous'):
-                encoded=''.join(clean(p) for p in parts)
-                raw=base64.b64decode(encoded,validate=True)
+                raw=base64.b64decode(''.join(clean(p) for p in parts),validate=True)
               else:
-                chunks=[]
-                for p in parts:
-                  chunks.append(base64.b64decode(clean(p),validate=True))
-                raw=b''.join(chunks)
+                raw=b''.join(base64.b64decode(clean(p),validate=True) for p in parts)
               out=Path('/tmp')/(name+'.tar.xz'); out.write_bytes(raw)
               proc=subprocess.run(['xz','-t',str(out)],capture_output=True,text=True)
               status='XZ_OK' if proc.returncode==0 else 'XZ_FAIL:'+proc.stderr.strip()
@@ -47,9 +43,7 @@ jobs:
             except Exception as e:
               results.append((name,'DECODE_FAIL:'+repr(e),0,''))
           for r in results: print('|'.join(map(str,r)))
-          ok=[r for r in results if r[1]=='XZ_OK']
-          if not ok: raise SystemExit('NO_VALID_ARCHIVE')
-          Path('/tmp/winner.txt').write_text(ok[0][0])
+          if not any(r[1]=='XZ_OK' for r in results): raise SystemExit('NO_VALID_ARCHIVE')
           PY
       - uses: actions/upload-artifact@v4
         if: always()

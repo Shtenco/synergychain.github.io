@@ -1,0 +1,28 @@
+name: Export raw SINERGY-MYFINANCE V3 source parts
+
+on:
+  push:
+    branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find android/myfinance-v3 -maxdepth 1 -type f -name 'source*' -print0 | sort -z | xargs -0 sha256sum | tee android/myfinance-v3/SOURCE-FILES-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-MYFINANCE-V3-RAW-SOURCE-PARTS
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            android/myfinance-v3/source*
+            android/myfinance-v3/SOURCE-FILES-SHA256.txt

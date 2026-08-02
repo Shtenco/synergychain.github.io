@@ -1,0 +1,52 @@
+name: Diagnose SINERGY-MYFINANCE V3 source parts
+
+on:
+  push:
+    branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test all archive reconstruction strategies
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l android/myfinance-v3/source* | tee /tmp/files.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, subprocess
+          root=Path('android/myfinance-v3')
+          sets={
+            'continuous_00_05': [root/f'source.b64.part{i:02d}' for i in range(6)],
+            'independent_00_05': [root/f'source.b64.part{i:02d}' for i in range(6)],
+            'legacy_mix': [root/'source.b64.part00',root/'source.b64.part01',root/'source.b64.part02',root/'source.part03.b64',root/'source.part04.b64'],
+          }
+          def clean(p): return ''.join(p.read_text(encoding='utf-8').split())
+          results=[]
+          for name, parts in sets.items():
+            if not all(p.exists() for p in parts):
+              results.append((name,'missing',0,'')); continue
+            try:
+              if name.startswith('continuous'):
+                raw=base64.b64decode(''.join(clean(p) for p in parts),validate=True)
+              else:
+                raw=b''.join(base64.b64decode(clean(p),validate=True) for p in parts)
+              out=Path('/tmp')/(name+'.tar.xz'); out.write_bytes(raw)
+              proc=subprocess.run(['xz','-t',str(out)],capture_output=True,text=True)
+              status='XZ_OK' if proc.returncode==0 else 'XZ_FAIL:'+proc.stderr.strip()
+              results.append((name,status,len(raw),hashlib.sha256(raw).hexdigest()))
+            except Exception as e:
+              results.append((name,'DECODE_FAIL:'+repr(e),0,''))
+          for r in results: print('|'.join(map(str,r)))
+          if not any(r[1]=='XZ_OK' for r in results): raise SystemExit('NO_VALID_ARCHIVE')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v3-source-diagnostics
+          path: /tmp/files.txt

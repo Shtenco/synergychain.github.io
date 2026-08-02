@@ -1,0 +1,115 @@
+name: Build SINERGY-MYFINANCE v3 from verified blobs
+
+on:
+  push:
+    branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA256: 2884c43860fd09583dfee78249911d5d73f7b5b6effdfaa0a453c7bf7435db31
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact source from verified Git blobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHAS=(
+            81c353aed6edd429365db07f9909d4a026cf91d6
+            228ac9aaf04bff0e75b4c2bd6b287208c88f0637
+            94597b5092e4befc343eece2e3758c955afb7677
+            07dfb7a978060b865d284310dda0cee86e68dbb1
+            f3f10b60e9e8f787132f0938f572ab7d8dcbb429
+            6a817f29b2f42bd7baec5745f02c34f48118a29c
+            d50629bfcaf810f7f1e0352002af70e1bcffbc2f
+            02c2fbdbf5ceb12aa1163ec207edbe0aa1bcbf7b
+            34990a0cceab3bf2bf22d60abe2db45db2da0af8
+            90c09c2bdec51dc216ebe0485f5e93e8c099f95f
+            4c65223d50e53cbf6a52875d598970ce4247b394
+            8c646bb5d56ce46064646d26db8b5aad10dbf217
+          )
+          : > /tmp/source.tar.xz
+          for sha in "${SHAS[@]}"; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" \
+              | python3 -c 'import sys,json,base64; o=json.load(sys.stdin); sys.stdout.buffer.write(base64.b64decode(o["content"]))' \
+              >> /tmp/source.tar.xz
+          done
+          echo "${SOURCE_SHA256}  /tmp/source.tar.xz" | sha256sum -c -
+          xz -t /tmp/source.tar.xz
+          mkdir -p /tmp/myfinance-src
+          tar -xJf /tmp/source.tar.xz -C /tmp/myfinance-src
+          test -f /tmp/myfinance-src/app/src/main/java/ai/sinergy/myfinance/WalletVault.java
+          test -f /tmp/myfinance-src/app/src/main/java/ai/sinergy/myfinance/BitcoinEngine.java
+          test -f /tmp/myfinance-src/app/src/main/java/ai/sinergy/myfinance/EvmEngine.java
+          test -f /tmp/myfinance-src/app/src/main/java/ai/sinergy/myfinance/SolanaEngine.java
+          node /tmp/myfinance-src/tests/run-tests.js
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle 8.2.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Compile Android release and debug APKs
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p /tmp/myfinance-src clean assembleRelease assembleDebug --stacktrace 2>&1 | tee /tmp/myfinance-src/android-build.log
+
+      - name: Verify Android artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE=/tmp/myfinance-src/app/build/outputs/apk/release/app-release-unsigned.apk
+          DEBUG=/tmp/myfinance-src/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$RELEASE"
+          test -f "$DEBUG"
+          unzip -t "$RELEASE" | tee /tmp/myfinance-src/apk-release-integrity.txt
+          unzip -t "$DEBUG" | tee /tmp/myfinance-src/apk-debug-integrity.txt
+          mkdir -p /tmp/myfinance-src/android-signing-tools
+          cp "$ANDROID_HOME/build-tools/34.0.0/zipalign" /tmp/myfinance-src/android-signing-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/apksigner" /tmp/myfinance-src/android-signing-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/lib/apksigner.jar" /tmp/myfinance-src/android-signing-tools/
+          sha256sum "$RELEASE" "$DEBUG" | tee /tmp/myfinance-src/APK-SHA256SUMS.txt
+
+      - name: Upload compiled APKs and signing tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-MYFINANCE-v3.0.0-compiled
+          path: |
+            /tmp/myfinance-src/app/build/outputs/apk/release/app-release-unsigned.apk
+            /tmp/myfinance-src/app/build/outputs/apk/debug/app-debug.apk
+            /tmp/myfinance-src/android-build.log
+            /tmp/myfinance-src/apk-release-integrity.txt
+            /tmp/myfinance-src/apk-debug-integrity.txt
+            /tmp/myfinance-src/APK-SHA256SUMS.txt
+            /tmp/myfinance-src/android-signing-tools
+          if-no-files-found: error

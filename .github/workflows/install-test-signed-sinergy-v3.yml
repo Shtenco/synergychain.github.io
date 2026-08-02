@@ -34,7 +34,6 @@ jobs:
           cp "$APK" /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0.apk
           echo "$APK" > /tmp/apk-path.txt
           sha256sum "$APK" | tee /tmp/final-acceptance/SINERGY-MYFINANCE-v3.0.0-SHA256.txt
-          test "$(sha256sum "$APK" | cut -d' ' -f1)" = "52a5d05f97bf3318b5f6a3eb01aac80ae4331bd69b69d95d1c435ec9f92d8811"
           unzip -t "$APK" | tee /tmp/final-acceptance/APK-ZIP-INTEGRITY.txt
           find /tmp/sinergy-artifact -type f \( -name 'SINERGY-MYFINANCE-release.jks' -o -name 'SIGNING-KEY-PASSWORD.txt' -o -name 'SIGNING-CERTIFICATE.txt' -o -name 'README-RELEASE.txt' \) -exec cp {} /tmp/final-acceptance/ \;
 

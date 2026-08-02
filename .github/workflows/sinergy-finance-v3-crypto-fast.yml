@@ -1,0 +1,64 @@
+name: Release SINERGY Finance v3 Crypto APK Fast
+
+on:
+  pull_request:
+    branches: [build/sinergy-finance-apk]
+    paths:
+      - 'android/finance-crypto-patch/**'
+      - '.github/workflows/sinergy-finance-v3-crypto-fast.yml'
+
+permissions:
+  contents: read
+
+env:
+  APK_NAME: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET.apk
+
+jobs:
+  compile-sign-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-34' 'platforms;android-35' 'build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile, sign and verify
+        shell: bash
+        run: |
+          sed -i 's/com.android.tools.build:gradle:8.1.0/com.android.tools.build:gradle:8.7.3/' android/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/finance-crypto-patch/build-crypto-apk.sh')
+          s = p.read_text()
+          needle = "tar -xJf /tmp/fix01.tar.xz -C android\n"
+          addition = needle + "\nbase64 -d android/finance-crypto-patch/fix02.tar.xz.b64 > /tmp/fix02.tar.xz\necho '349abdf071c87df52e4a0ae7d4834bc9970fc3de7e37de868003e6ef20e15d65  /tmp/fix02.tar.xz' | sha256sum -c -\nxz -t /tmp/fix02.tar.xz\ntar -xJf /tmp/fix02.tar.xz -C android\n\nbase64 -d android/finance-crypto-patch/fix03.tar.xz.b64 > /tmp/fix03.tar.xz\necho 'ebb1c89a04383b438338b34a7f4245fe9b45428f2f032eaf331bc5fc6da129f4  /tmp/fix03.tar.xz' | sha256sum -c -\nxz -t /tmp/fix03.tar.xz\ntar -xJf /tmp/fix03.tar.xz -C android\n\necho \"android { packaging { resources { excludes += ['META-INF/INDEX.LIST', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/AL2.0', 'META-INF/LGPL2.1', 'META-INF/io.netty.versions.properties'] } } }\" >> android/app/build.gradle\n"
+          if needle not in s:
+              raise SystemExit('fix01 overlay anchor missing')
+          p.write_text(s.replace(needle, addition, 1))
+          PY
+          bash android/finance-crypto-patch/build-crypto-apk.sh
+      - name: Publish signed APK immediately
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET-FAST
+          path: android/release
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-v3-CRYPTO-fast-diagnostics
+          path: android/build-diagnostics
+          if-no-files-found: warn
+          retention-days: 14

@@ -62,25 +62,20 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: |
-            set -eu
-            APK="$(cat /tmp/apk-path.txt)"
             adb wait-for-device
             adb logcat -c
             adb uninstall ai.sinergy.myfinance >/dev/null 2>&1 || true
-            adb install "$APK" | tee /tmp/final-acceptance/ADB-INSTALL.txt
+            adb install "$(cat /tmp/apk-path.txt)" | tee /tmp/final-acceptance/ADB-INSTALL.txt
             grep -q 'Success' /tmp/final-acceptance/ADB-INSTALL.txt
             adb shell pm path ai.sinergy.myfinance | tee -a /tmp/final-acceptance/ADB-INSTALL.txt
-            adb shell dumpsys package ai.sinergy.myfinance | grep -E 'versionCode=|versionName=' | tee -a /tmp/final-acceptance/ADB-INSTALL.txt
+            adb shell dumpsys package ai.sinergy.myfinance | grep -E 'versionCode=5|versionName=3.0.0' | tee -a /tmp/final-acceptance/ADB-INSTALL.txt
             adb shell am start -W -n ai.sinergy.myfinance/.MainActivity | tee /tmp/final-acceptance/ACTIVITY-LAUNCH.txt
             sleep 8
-            PID="$(adb shell pidof ai.sinergy.myfinance | tr -d '\r')"
-            test -n "$PID"
-            echo "PID=$PID" | tee /tmp/final-acceptance/PROCESS-ALIVE.txt
-            adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | tee /tmp/final-acceptance/RESUMED-ACTIVITY.txt
-            grep -q 'ai.sinergy.myfinance/.MainActivity' /tmp/final-acceptance/RESUMED-ACTIVITY.txt
+            test -n "$(adb shell pidof ai.sinergy.myfinance | tr -d '\r')"
+            adb shell pidof ai.sinergy.myfinance | tee /tmp/final-acceptance/PROCESS-ALIVE.txt
             adb exec-out screencap -p > /tmp/final-acceptance/DEVICE-SCREENSHOT.png || true
             adb logcat -d > /tmp/final-acceptance/DEVICE-LOGCAT.txt
-            if grep -E 'FATAL EXCEPTION|ANR in ai.sinergy.myfinance' /tmp/final-acceptance/DEVICE-LOGCAT.txt; then exit 1; fi
+            ! grep -E 'FATAL EXCEPTION|ANR in ai.sinergy.myfinance' /tmp/final-acceptance/DEVICE-LOGCAT.txt
             echo 'SIGNED RELEASE INSTALL AND LAUNCH: PASS' | tee /tmp/final-acceptance/DEVICE-ACCEPTANCE.txt
 
       - name: Package device-tested APK

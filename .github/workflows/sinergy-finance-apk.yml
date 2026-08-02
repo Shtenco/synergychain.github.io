@@ -50,10 +50,7 @@ jobs:
         mv android/app/src/finance android/app/src/main
         cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
         V21_PARTS=(
-          android/finance-bundle/v21safe.part00a
-          android/finance-bundle/v21safe.part00b
-          android/finance-bundle/v21safe.part00c
-          android/finance-bundle/v21safe.part00d
+          android/finance-bundle/v21safe.part00
           android/finance-bundle/v21safe.part01
           android/finance-bundle/v21safe.part02
           android/finance-bundle/v21safe.part03

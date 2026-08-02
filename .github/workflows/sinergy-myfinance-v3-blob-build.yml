@@ -3,6 +3,8 @@ name: Build SINERGY-MYFINANCE v3 from verified blobs
 on:
   push:
     branches: [build/sinergy-myfinance-v3-ci]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -56,6 +58,12 @@ jobs:
           test -f /tmp/myfinance-src/app/src/main/java/ai/sinergy/myfinance/SolanaEngine.java
           node /tmp/myfinance-src/tests/run-tests.js
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
@@ -70,17 +78,10 @@ jobs:
         with:
           gradle-version: '8.2.1'
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
       - name: Compile Android release and debug APKs
         shell: bash
         run: |
           set -o pipefail
-          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
           gradle -p /tmp/myfinance-src clean assembleRelease assembleDebug --stacktrace 2>&1 | tee /tmp/myfinance-src/android-build.log
 
       - name: Verify Android artifacts

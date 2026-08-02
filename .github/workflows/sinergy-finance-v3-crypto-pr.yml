@@ -47,7 +47,7 @@ jobs:
           p = Path('android/finance-crypto-patch/build-crypto-apk.sh')
           s = p.read_text()
           needle = "tar -xJf /tmp/fix01.tar.xz -C android\n"
-          addition = needle + "\nbase64 -d android/finance-crypto-patch/fix02.tar.xz.b64 > /tmp/fix02.tar.xz\necho '349abdf071c87df52e4a0ae7d4834bc9970fc3de7e37de868003e6ef20e15d65  /tmp/fix02.tar.xz' | sha256sum -c -\nxz -t /tmp/fix02.tar.xz\ntar -xJf /tmp/fix02.tar.xz -C android\n\nbase64 -d android/finance-crypto-patch/fix03.tar.xz.b64 > /tmp/fix03.tar.xz\necho 'ebb1c89a04383b438338b34a7f4245fe9b45428f2f032eaf331bc5fc6da129f4  /tmp/fix03.tar.xz' | sha256sum -c -\nxz -t /tmp/fix03.tar.xz\ntar -xJf /tmp/fix03.tar.xz -C android\n"
+          addition = needle + "\nbase64 -d android/finance-crypto-patch/fix02.tar.xz.b64 > /tmp/fix02.tar.xz\necho '349abdf071c87df52e4a0ae7d4834bc9970fc3de7e37de868003e6ef20e15d65  /tmp/fix02.tar.xz' | sha256sum -c -\nxz -t /tmp/fix02.tar.xz\ntar -xJf /tmp/fix02.tar.xz -C android\n\nbase64 -d android/finance-crypto-patch/fix03.tar.xz.b64 > /tmp/fix03.tar.xz\necho 'ebb1c89a04383b438338b34a7f4245fe9b45428f2f032eaf331bc5fc6da129f4  /tmp/fix03.tar.xz' | sha256sum -c -\nxz -t /tmp/fix03.tar.xz\ntar -xJf /tmp/fix03.tar.xz -C android\n\nsed -i \"/packaging {/a\\        resources.excludes += ['META-INF/INDEX.LIST', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/AL2.0', 'META-INF/LGPL2.1', 'META-INF/io.netty.versions.properties']\" android/app/build.gradle\ngrep -q 'META-INF/INDEX.LIST' android/app/build.gradle\n"
           if needle not in s:
               raise SystemExit('fix01 overlay anchor missing')
           p.write_text(s.replace(needle, addition, 1))

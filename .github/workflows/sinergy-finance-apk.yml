@@ -45,11 +45,27 @@ jobs:
         rm -rf android/app/src/main
         mv android/app/src/finance android/app/src/main
         cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+        V21_PARTS=(
+          android/finance-bundle/v21safe.part00a
+          android/finance-bundle/v21safe.part00b
+          android/finance-bundle/v21safe.part00c
+          android/finance-bundle/v21safe.part00d
+          android/finance-bundle/v21safe.part01
+          android/finance-bundle/v21safe.part02
+          android/finance-bundle/v21safe.part03
+          android/finance-bundle/v21safe.part04
+          android/finance-bundle/v21safe.part05
+          android/finance-bundle/v21safe.part06
+          android/finance-bundle/v21safe.part07
+          android/finance-bundle/v21safe.part08
+          android/finance-bundle/v21safe.part09
+          android/finance-bundle/v21safe.part10
+        )
         echo '=== V2.1 PART SIZES ==='
-        wc -c android/finance-bundle/v21safe.part*
+        wc -c "${V21_PARTS[@]}"
         echo '=== V2.1 PART SHA256 ==='
-        sha256sum android/finance-bundle/v21safe.part*
-        cat android/finance-bundle/v21safe.part* > /tmp/sinergy-finance-v21.patch.xz.b64
+        sha256sum "${V21_PARTS[@]}"
+        cat "${V21_PARTS[@]}" > /tmp/sinergy-finance-v21.patch.xz.b64
         echo '=== V2.1 FULL BASE64 ==='
         wc -c /tmp/sinergy-finance-v21.patch.xz.b64
         sha256sum /tmp/sinergy-finance-v21.patch.xz.b64

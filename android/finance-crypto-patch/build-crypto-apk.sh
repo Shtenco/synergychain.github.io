@@ -94,6 +94,58 @@ configurations.configureEach {
 GRADLE_PIN
 cat android/app/build.gradle | tee android/build-diagnostics/app-build-effective.gradle.txt
 
+python3 - <<'PY'
+from pathlib import Path
+
+passkey = Path("android/app/src/main/java/ai/sinergy/finance/wallet/PasskeyManager.java")
+text = passkey.read_text(encoding="utf-8")
+text = text.replace(
+    "import androidx.credentials.CreateCredentialException;",
+    "import androidx.credentials.exceptions.CreateCredentialException;",
+)
+text = text.replace(
+    "import androidx.credentials.GetCredentialException;",
+    "import androidx.credentials.exceptions.GetCredentialException;",
+)
+passkey.write_text(text, encoding="utf-8")
+
+evm = Path("android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java")
+text = evm.read_text(encoding="utf-8")
+text = text.replace(
+    "import org.web3j.crypto.WalletUtils;",
+    "import org.web3j.crypto.Credentials;",
+)
+text = text.replace(
+    "TransactionEncoder.signMessage(raw, network.chainId.longValueExact(), key.keyPair())",
+    "TransactionEncoder.signMessage(raw, network.chainId.longValueExact(), Credentials.create(key.keyPair()))",
+)
+text = text.replace(
+    'if (!WalletUtils.isValidAddress(address == null ? "" : address.trim())) throw new IllegalArgumentException(field + " некорректен");',
+    'if (address == null || !address.trim().matches("(?i)^0x[0-9a-f]{40}$")) throw new IllegalArgumentException(field + " некорректен");',
+)
+evm.write_text(text, encoding="utf-8")
+
+safe = Path("android/app/src/main/java/ai/sinergy/finance/wallet/SafeTreasuryClient.java")
+text = safe.read_text(encoding="utf-8")
+text = text.replace(
+    "FunctionReturnDecoder.decode(ownersRaw, Collections.singletonList(",
+    "FunctionReturnDecoder.decode(ownersRaw, (java.util.List) Collections.singletonList(",
+)
+text = text.replace(
+    "FunctionReturnDecoder.decode(thresholdRaw, Collections.singletonList(",
+    "FunctionReturnDecoder.decode(thresholdRaw, (java.util.List) Collections.singletonList(",
+)
+text = text.replace(
+    "FunctionReturnDecoder.decode(nonceRaw, Collections.singletonList(",
+    "FunctionReturnDecoder.decode(nonceRaw, (java.util.List) Collections.singletonList(",
+)
+safe.write_text(text, encoding="utf-8")
+PY
+
+grep -R -n "credentials.exceptions\|Credentials.create\|0x\[0-9a-f\]\|FunctionReturnDecoder.decode" \
+  android/app/src/main/java/ai/sinergy/finance/wallet \
+  | tee android/build-diagnostics/android-compat-patches.txt
+
 gradle -p android clean assembleRelease -x lintVitalRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
 UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'
 ALIGNED='android/release/app-release-aligned.apk'

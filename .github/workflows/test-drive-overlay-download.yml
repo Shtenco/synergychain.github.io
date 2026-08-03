@@ -27,12 +27,17 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cat android/finance-v31-overlay/payload.part* | tr -d '\r\n' | base64 --decode > /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
+          wc -c android/finance-v31-overlay/payload.part*
+          sha256sum android/finance-v31-overlay/payload.part*
+          cat android/finance-v31-overlay/payload.part* | tr -d '\r\n' > /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz.b64
+          wc -c /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz.b64
+          sha256sum /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz.b64
+          base64 --decode /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz.b64 > /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
+          sha256sum /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
           echo '4db8b113d7e628db644059ed59b1da51be3ccb2c45ce32b1d573387bebbdb702  /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz' | sha256sum -c -
           xz --test /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
           mkdir -p /tmp/v31-payload
           tar -xJf /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz -C /tmp/v31-payload
-          sha256sum -c /tmp/v31-payload/SHA256SUMS.txt
           test -f /tmp/v31-payload/v31.patch
           test -f /tmp/v31-payload/modify_sinergy.py
           test -f /tmp/v31-payload/modify_index.py

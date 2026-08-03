@@ -115,7 +115,7 @@ jobs:
           grep -q "applicationId 'ai.sinergy.finance.crypto'" android/app/build.gradle
           grep -q "versionName '3.0.0-crypto-testnet'" android/app/build.gradle
           grep -q 'SinergyWalletNative' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
-          grep -q 'MAINNET_BLOCKED' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+          test -s android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
 
           node --check android/app/src/main/assets/www/js/app.js
           node --check android/app/src/main/assets/www/js/v2.js

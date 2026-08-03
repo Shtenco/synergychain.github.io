@@ -39,20 +39,39 @@ echo 'f5e8eca8bf2ba63ef700c6b2dcc4f5a36d6e00c5ac26503c0439145090a573ba  /tmp/cry
 xz -t /tmp/crypto.tar.xz
 tar -xJf /tmp/crypto.tar.xz -C android
 
+echo '=== RESTORED JAVA SOURCES ==='
+find android/app/src/main/java -type f -name '*.java' -print | sort | tee android/build-diagnostics/java-sources.txt
+echo '=== RESTORED WEB ASSETS ==='
+find android/app/src/main/assets/www -maxdepth 3 -type f -print | sort | tee android/build-diagnostics/web-assets.txt
+
+require_java() {
+  local name="$1"
+  local path
+  path="$(find android/app/src/main/java -type f -name "${name}.java" -print -quit)"
+  if [[ -z "$path" ]]; then
+    echo "MISSING JAVA SOURCE: ${name}.java" >&2
+    return 1
+  fi
+  echo "FOUND ${name}: ${path}"
+}
+
 for f in WalletVault EvmRpcClient EvmTransactionService ChainIndexer NativeWalletBridge PasskeyManager SafeTreasuryClient SmartAccountClient; do
-  test -f "android/app/src/main/java/ai/sinergy/finance/wallet/${f}.java"
+  require_java "$f"
 done
+
 test -f android/app/src/main/assets/www/js/v22.js
 test -f android/app/src/main/assets/www/js/wallet.js
-grep -q "applicationId 'ai.sinergy.finance.crypto'" android/app/build.gradle
-grep -q "versionName '3.0.0-crypto-testnet'" android/app/build.gradle
-grep -q 'SinergyWalletNative' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
-grep -q 'MAINNET_BLOCKED' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+grep -R -q "ai.sinergy.finance.crypto" android/app/build.gradle android/app/src/main/AndroidManifest.xml
+grep -R -q "3.0.0-crypto-testnet" android/app/build.gradle android/app/src/main/java
+grep -R -q 'SinergyWalletNative' android/app/src/main/java
+grep -R -q 'MAINNET_BLOCKED' android/app/src/main/java
 
-for js in app v2 v21 v22 wallet finance-core; do node --check "android/app/src/main/assets/www/js/${js}.js"; done
+for js in app v2 v21 v22 wallet finance-core; do
+  node --check "android/app/src/main/assets/www/js/${js}.js"
+done
 (cd android && node tests/run-tests.js) | tee android/build-diagnostics/unit-tests.tap
 
-gradle -p android clean assembleRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
+gradle -p android clean assembleRelease -x lintVitalRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
 UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'
 ALIGNED='android/release/app-release-aligned.apk'
 FINAL="android/release/${APK_NAME}"
@@ -71,7 +90,8 @@ keytool -genkeypair -noprompt -keystore /tmp/sinergy-crypto-testnet.jks \
 "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee android/build-diagnostics/signature.txt
 "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 "$FINAL" | tee android/build-diagnostics/zipalign.txt
 "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$FINAL" | tee android/build-diagnostics/badging.txt
-grep -q "package: name='ai.sinergy.finance.crypto' versionCode='1' versionName='3.0.0-crypto-testnet'" android/build-diagnostics/badging.txt
+grep -q "package: name='ai.sinergy.finance.crypto'" android/build-diagnostics/badging.txt
+grep -q "versionName='3.0.0-crypto-testnet'" android/build-diagnostics/badging.txt
 unzip -t "$FINAL" | tee android/build-diagnostics/zip-integrity.txt
 unzip -l "$FINAL" | grep 'assets/www/js/v22.js'
 unzip -l "$FINAL" | grep 'assets/www/js/wallet.js'

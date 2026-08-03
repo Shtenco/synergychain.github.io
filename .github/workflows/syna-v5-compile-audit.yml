@@ -1,0 +1,50 @@
+name: SYNA V5 compile audit
+
+on:
+  pull_request:
+    paths:
+      - ".ci/syna-v5/**"
+      - ".github/workflows/syna-v5-compile-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: .ci/syna-v5/package-lock-placeholder
+
+      - name: Rebuild and verify archive
+        shell: bash
+        run: |
+          cat .ci/syna-v5/project.zip.b64.part-* | base64 --decode > /tmp/syna-v5.zip
+          echo "5fec7b54d06f5f5cb6892168d73139460e8b40af17c2287c2c1d3baf228a8641  /tmp/syna-v5.zip" | sha256sum --check
+          mkdir -p /tmp/syna-v5
+          unzip -q /tmp/syna-v5.zip -d /tmp/syna-v5
+          test -f /tmp/syna-v5/synergy-syna-shielded-v5-fixed/package.json
+
+      - name: Install exact toolchain
+        working-directory: /tmp/syna-v5/synergy-syna-shielded-v5-fixed
+        run: npm install --no-audit --no-fund
+
+      - name: Compile contracts
+        working-directory: /tmp/syna-v5/synergy-syna-shielded-v5-fixed
+        run: npm run compile
+
+      - name: Validate runtime bytecode and project
+        working-directory: /tmp/syna-v5/synergy-syna-shielded-v5-fixed
+        run: node scripts/validate-project.js
+
+      - name: Run tests
+        working-directory: /tmp/syna-v5/synergy-syna-shielded-v5-fixed
+        run: npm test

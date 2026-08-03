@@ -1,0 +1,64 @@
+name: Extract SINERGY Crypto Layer
+
+on:
+  push:
+    branches:
+      - extract/sinergy-crypto-layer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct exact Crypto Layer archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/crypto-layer out/v22-supplement out/metadata
+
+          cat android/finance-crypto-patch/part00.b64 \
+              android/finance-crypto-patch/part01.b64 \
+              android/finance-crypto-patch/part02.b64 \
+              android/finance-crypto-patch/part03.b64 \
+            | tr -d '\r\n' | base64 --decode > out/SINERGY-CRYPTO-LAYER.tar.xz
+
+          xz --test out/SINERGY-CRYPTO-LAYER.tar.xz
+          tar -xJf out/SINERGY-CRYPTO-LAYER.tar.xz -C out/crypto-layer
+
+          tr -d '\r\n' < android/finance-crypto-patch/v22-supplement.tar.xz.b64 \
+            | base64 --decode > out/SINERGY-V22-SUPPLEMENT.tar.xz
+          xz --test out/SINERGY-V22-SUPPLEMENT.tar.xz
+          tar -xJf out/SINERGY-V22-SUPPLEMENT.tar.xz -C out/v22-supplement
+
+          cp android/app/build.gradle out/metadata/app-build.gradle
+          cp android/build.gradle out/metadata/root-build.gradle
+          cp android/settings.gradle out/metadata/settings.gradle
+          cp android/gradle.properties out/metadata/gradle.properties
+          cp .github/workflows/sinergy-finance-v3-crypto-binary.yml out/metadata/original-build-workflow.yml
+
+          find out/crypto-layer -type f -printf '%P\n' | sort > out/CRYPTO-LAYER-FILELIST.txt
+          find out/v22-supplement -type f -printf '%P\n' | sort > out/V22-SUPPLEMENT-FILELIST.txt
+          sha256sum out/SINERGY-CRYPTO-LAYER.tar.xz out/SINERGY-V22-SUPPLEMENT.tar.xz > out/SHA256SUMS.txt
+
+          cat > out/README-EXTRACTED.txt <<'EOF'
+          Exact source payload reconstructed from branch build/sinergy-finance-v3-crypto-binary.
+          crypto-layer/ contains the native Crypto Layer source payload.
+          v22-supplement/ contains the accompanying v2.2 supplement payload.
+          metadata/ contains Gradle configuration and the original build workflow.
+          No decompilation or regenerated source was used.
+          EOF
+
+      - name: Upload exact Crypto Layer sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-CRYPTO-LAYER-EXACT-SOURCES
+          path: out/
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 14

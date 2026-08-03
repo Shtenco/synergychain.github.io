@@ -140,6 +140,7 @@ jobs:
           python3 /tmp/v31-payload/modify_sinergy.py android/app/src/main
           python3 /tmp/v31-payload/modify_index.py android/app/src/main
           python3 /tmp/v31-payload/modify_core_v21.py android/app/src/main
+          python3 android/finance-v31-overlay/fix_android_compat.py android/app/src/main
 
           cp /tmp/v31-payload/sinergy-logo-256.png /tmp/sinergy-logo.png
           echo '4b7dabfd11bc5ff0e6b2934fb12f6f9573d767837e43441cbfc863b1b6a08b21  /tmp/sinergy-logo.png' | sha256sum -c -

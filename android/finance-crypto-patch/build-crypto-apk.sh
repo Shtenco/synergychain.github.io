@@ -83,6 +83,8 @@ grep -q "buildToolsVersion '34.0.0'" android/app/build.gradle || \
   sed -i "/compileSdk 34/a\\    buildToolsVersion '34.0.0'" android/app/build.gradle
 sed -i "s/androidx.credentials:credentials:1.5.0/androidx.credentials:credentials:1.3.0/" android/app/build.gradle
 sed -i "s/androidx.credentials:credentials-play-services-auth:1.5.0/androidx.credentials:credentials-play-services-auth:1.3.0/" android/app/build.gradle
+sed -i "s/org.web3j:crypto:4.14.0/org.web3j:crypto:4.10.3/" android/app/build.gradle
+sed -i "s/org.web3j:abi:4.14.0/org.web3j:abi:4.10.3/" android/app/build.gradle
 cat >> android/app/build.gradle <<'GRADLE_PIN'
 
 configurations.configureEach {

@@ -4,3 +4,4 @@ Retry after moving metadata verification to the built APK.
 Retry after allowing the absent archived JS test runner.
 Retry with SDK-34-compatible Credential Manager dependencies.
 Retry with Android-compatible Web3j 4.10.3.
+Retry with Android API compatibility source patches.

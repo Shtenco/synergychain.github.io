@@ -1,4 +1,4 @@
-name: Export Android Toolchain
+name: Export Android Dependency Cache
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  export-toolchain:
+  export-cache:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -26,7 +26,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install exact Android platforms
+      - name: Install Android platforms
         shell: bash
         run: |
           set -euo pipefail
@@ -38,7 +38,7 @@ jobs:
         with:
           gradle-version: '8.2.1'
 
-      - name: Resolve exact Crypto dependencies
+      - name: Download every Crypto release artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +64,7 @@ jobs:
           android {
               namespace 'ai.sinergy.warmup'
               compileSdk 35
+              buildToolsVersion '34.0.0'
               defaultConfig { applicationId 'ai.sinergy.warmup'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0'; multiDexEnabled true }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
           }
@@ -83,6 +84,13 @@ jobs:
               implementation 'com.google.mlkit:text-recognition:16.0.1'
               implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
           }
+          tasks.register('resolveCryptoRelease') {
+              doLast {
+                  def files = configurations.releaseRuntimeClasspath.resolve().sort { it.name }
+                  files.each { println("RESOLVED " + it.absolutePath + " " + it.length()) }
+                  if (files.isEmpty()) throw new GradleException('No release artifacts resolved')
+              }
+          }
           EOF
           cat > /tmp/warmup/app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><activity android:name=".MainActivity" android:exported="true"/></application></manifest>
@@ -91,69 +99,33 @@ jobs:
           package ai.sinergy.warmup;
           public final class MainActivity extends android.app.Activity { }
           EOF
-          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
-          gradle -p /tmp/warmup --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /tmp/crypto-dependencies.txt
-          grep -q 'androidx.credentials:credentials:1.5.0' /tmp/crypto-dependencies.txt
-          grep -q 'androidx.work:work-runtime:2.9.0' /tmp/crypto-dependencies.txt
-          grep -q 'org.bouncycastle:bcprov-jdk18on:1.78.1' /tmp/crypto-dependencies.txt
+          gradle -p /tmp/warmup --no-daemon :app:resolveCryptoRelease | tee /tmp/resolved-artifacts.txt
+          grep -q 'credentials-1.5.0.aar' /tmp/resolved-artifacts.txt
+          grep -q 'biometric-1.1.0.aar' /tmp/resolved-artifacts.txt
+          grep -q 'work-runtime-2.9.0.aar' /tmp/resolved-artifacts.txt
+          grep -q 'text-recognition-16.0.1.aar' /tmp/resolved-artifacts.txt
+          grep -q 'bcprov-jdk18on-1.78.1.jar' /tmp/resolved-artifacts.txt
 
-      - name: Package small toolchain artifacts
+      - name: Package full Gradle cache
         shell: bash
         run: |
           set -euo pipefail
-          REAL_JAVA_HOME="$(readlink -f "${JAVA_HOME_17_X64:-$JAVA_HOME}")"
-          GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
-          GRADLE_HOME="$(dirname "$(dirname "$GRADLE_BIN")")"
-          rm -rf /tmp/sinergy-export
-          mkdir -p /tmp/sinergy-export/jdk /tmp/sinergy-export/sdk/android-sdk/build-tools /tmp/sinergy-export/sdk/android-sdk/platforms /tmp/sinergy-export/cache/gradle-user-home/caches
+          rm -rf /tmp/full-cache
+          mkdir -p /tmp/full-cache/gradle-user-home/caches
+          cp -a "$HOME/.gradle/caches/modules-2" /tmp/full-cache/gradle-user-home/caches/
+          cp -a "$HOME/.gradle/caches/8.2.1" /tmp/full-cache/gradle-user-home/caches/ 2>/dev/null || true
+          cp /tmp/resolved-artifacts.txt /tmp/full-cache/
+          tar -C /tmp/full-cache -czf /tmp/SINERGY-GRADLE-FULL-CACHE.tar.gz .
+          sha256sum /tmp/SINERGY-GRADLE-FULL-CACHE.tar.gz > /tmp/SINERGY-GRADLE-FULL-CACHE.sha256
+          ls -lh /tmp/SINERGY-GRADLE-FULL-CACHE.tar.gz
+          test "$(stat -c %s /tmp/SINERGY-GRADLE-FULL-CACHE.tar.gz)" -lt 536870912
 
-          cp -a "$REAL_JAVA_HOME/." /tmp/sinergy-export/jdk/
-          cp -a "$GRADLE_HOME" /tmp/sinergy-export/sdk/gradle-8.2.1
-          cp -a "$ANDROID_SDK_ROOT/build-tools/34.0.0" /tmp/sinergy-export/sdk/android-sdk/build-tools/
-          cp -a "$ANDROID_SDK_ROOT/platforms/android-34" /tmp/sinergy-export/sdk/android-sdk/platforms/
-          cp -a "$ANDROID_SDK_ROOT/platforms/android-35" /tmp/sinergy-export/sdk/android-sdk/platforms/
-          cp -a "$ANDROID_SDK_ROOT/platform-tools" /tmp/sinergy-export/sdk/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/licenses" /tmp/sinergy-export/sdk/android-sdk/
-          cp -a "$HOME/.gradle/caches/modules-2" /tmp/sinergy-export/cache/gradle-user-home/caches/
-          cp -a "$HOME/.gradle/caches/8.2.1" /tmp/sinergy-export/cache/gradle-user-home/caches/ 2>/dev/null || true
-          cp -a "$HOME/.gradle/caches/transforms-3" /tmp/sinergy-export/cache/gradle-user-home/caches/ 2>/dev/null || true
-          cp /tmp/crypto-dependencies.txt /tmp/sinergy-export/cache/
-
-          tar -C /tmp/sinergy-export/jdk -czf /tmp/JDK17.tar.gz .
-          tar -C /tmp/sinergy-export/sdk -czf /tmp/ANDROID-SDK-GRADLE.tar.gz .
-          tar -C /tmp/sinergy-export/cache -czf /tmp/GRADLE-CACHE.tar.gz .
-          sha256sum /tmp/JDK17.tar.gz /tmp/ANDROID-SDK-GRADLE.tar.gz /tmp/GRADLE-CACHE.tar.gz | tee /tmp/SHA256SUMS.txt
-          ls -lh /tmp/JDK17.tar.gz /tmp/ANDROID-SDK-GRADLE.tar.gz /tmp/GRADLE-CACHE.tar.gz
-          python3 - <<'PY'
-          from pathlib import Path
-          limit=512*1024*1024
-          for n in ('JDK17.tar.gz','ANDROID-SDK-GRADLE.tar.gz','GRADLE-CACHE.tar.gz'):
-              p=Path('/tmp')/n
-              if p.stat().st_size >= limit: raise SystemExit(f'{n} too large: {p.stat().st_size}')
-          PY
-
-      - name: Upload JDK
+      - name: Upload full dependency cache
         uses: actions/upload-artifact@v4
         with:
-          name: SINERGY-JDK17
-          path: /tmp/JDK17.tar.gz
-          compression-level: 0
-          retention-days: 7
-
-      - name: Upload SDK and Gradle
-        uses: actions/upload-artifact@v4
-        with:
-          name: SINERGY-SDK-GRADLE
-          path: /tmp/ANDROID-SDK-GRADLE.tar.gz
-          compression-level: 0
-          retention-days: 7
-
-      - name: Upload dependency cache
-        uses: actions/upload-artifact@v4
-        with:
-          name: SINERGY-GRADLE-CACHE
+          name: SINERGY-GRADLE-FULL-CACHE
           path: |
-            /tmp/GRADLE-CACHE.tar.gz
-            /tmp/SHA256SUMS.txt
+            /tmp/SINERGY-GRADLE-FULL-CACHE.tar.gz
+            /tmp/SINERGY-GRADLE-FULL-CACHE.sha256
           compression-level: 0
           retention-days: 7

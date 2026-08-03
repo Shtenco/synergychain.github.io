@@ -1,2 +1,3 @@
 Trigger reproducible SINERGY Finance v3 Crypto Testnet APK rebuild for downloadable delivery.
 Retry after path-agnostic preflight fix.
+Retry after moving metadata verification to the built APK.

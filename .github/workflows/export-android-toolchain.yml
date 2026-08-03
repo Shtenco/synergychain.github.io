@@ -26,24 +26,24 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform
+      - name: Install exact Android platforms
         shell: bash
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          sdkmanager "platforms;android-34" "platforms;android-35" "build-tools;34.0.0" "platform-tools"
 
       - name: Set up Gradle 8.2.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.2.1'
 
-      - name: Resolve exact SINERGY Crypto dependencies
+      - name: Resolve exact Crypto dependencies
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/warmup
-          mkdir -p /tmp/warmup/app/src/main/java/ai/sinergy/warmup /tmp/warmup/app/src/main/res/values
+          mkdir -p /tmp/warmup/app/src/main/java/ai/sinergy/warmup
           cat > /tmp/warmup/settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
@@ -53,7 +53,7 @@ jobs:
           cat > /tmp/warmup/gradle.properties <<'EOF'
           android.useAndroidX=true
           android.nonTransitiveRClass=true
-          android.suppressUnsupportedCompileSdk=34
+          android.suppressUnsupportedCompileSdk=35
           org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
           EOF
           cat > /tmp/warmup/build.gradle <<'EOF'
@@ -63,10 +63,9 @@ jobs:
           plugins { id 'com.android.application' }
           android {
               namespace 'ai.sinergy.warmup'
-              compileSdk 34
+              compileSdk 35
               defaultConfig { applicationId 'ai.sinergy.warmup'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0'; multiDexEnabled true }
               compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-              packagingOptions { resources.excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*'] }
           }
           configurations.configureEach {
               exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
@@ -86,78 +85,75 @@ jobs:
           }
           EOF
           cat > /tmp/warmup/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:theme="@style/AppTheme"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>
-          EOF
-          cat > /tmp/warmup/app/src/main/res/values/styles.xml <<'EOF'
-          <resources><style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar"/></resources>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><activity android:name=".MainActivity" android:exported="true"/></application></manifest>
           EOF
           cat > /tmp/warmup/app/src/main/java/ai/sinergy/warmup/MainActivity.java <<'EOF'
           package ai.sinergy.warmup;
           public final class MainActivity extends android.app.Activity { }
           EOF
           export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
-          gradle -p /tmp/warmup --no-daemon :app:dependencies --configuration debugRuntimeClasspath | tee /tmp/crypto-dependencies.txt
+          gradle -p /tmp/warmup --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /tmp/crypto-dependencies.txt
           grep -q 'androidx.credentials:credentials:1.5.0' /tmp/crypto-dependencies.txt
           grep -q 'androidx.work:work-runtime:2.9.0' /tmp/crypto-dependencies.txt
           grep -q 'org.bouncycastle:bcprov-jdk18on:1.78.1' /tmp/crypto-dependencies.txt
 
-      - name: Package split toolchain
+      - name: Package small toolchain artifacts
         shell: bash
         run: |
           set -euo pipefail
-          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
+          REAL_JAVA_HOME="$(readlink -f "${JAVA_HOME_17_X64:-$JAVA_HOME}")"
           GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
           GRADLE_HOME="$(dirname "$(dirname "$GRADLE_BIN")")"
-          rm -rf /tmp/sinergy-split && mkdir -p /tmp/sinergy-split
+          rm -rf /tmp/sinergy-export
+          mkdir -p /tmp/sinergy-export/jdk /tmp/sinergy-export/sdk/android-sdk/build-tools /tmp/sinergy-export/sdk/android-sdk/platforms /tmp/sinergy-export/cache/gradle-user-home/caches
 
-          tar -C "$(dirname "$JAVA_HOME")" -czf /tmp/sinergy-split/JDK17.tar.gz "$(basename "$JAVA_HOME")"
+          cp -a "$REAL_JAVA_HOME/." /tmp/sinergy-export/jdk/
+          cp -a "$GRADLE_HOME" /tmp/sinergy-export/sdk/gradle-8.2.1
+          cp -a "$ANDROID_SDK_ROOT/build-tools/34.0.0" /tmp/sinergy-export/sdk/android-sdk/build-tools/
+          cp -a "$ANDROID_SDK_ROOT/platforms/android-34" /tmp/sinergy-export/sdk/android-sdk/platforms/
+          cp -a "$ANDROID_SDK_ROOT/platforms/android-35" /tmp/sinergy-export/sdk/android-sdk/platforms/
+          cp -a "$ANDROID_SDK_ROOT/platform-tools" /tmp/sinergy-export/sdk/android-sdk/
+          cp -a "$ANDROID_SDK_ROOT/licenses" /tmp/sinergy-export/sdk/android-sdk/
+          cp -a "$HOME/.gradle/caches/modules-2" /tmp/sinergy-export/cache/gradle-user-home/caches/
+          cp -a "$HOME/.gradle/caches/8.2.1" /tmp/sinergy-export/cache/gradle-user-home/caches/ 2>/dev/null || true
+          cp -a "$HOME/.gradle/caches/transforms-3" /tmp/sinergy-export/cache/gradle-user-home/caches/ 2>/dev/null || true
+          cp /tmp/crypto-dependencies.txt /tmp/sinergy-export/cache/
 
-          mkdir -p /tmp/sinergy-sdk-gradle/android-sdk
-          cp -a "$GRADLE_HOME" /tmp/sinergy-sdk-gradle/gradle-8.2.1
-          cp -a "$ANDROID_SDK_ROOT/build-tools" /tmp/sinergy-sdk-gradle/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/platforms" /tmp/sinergy-sdk-gradle/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/platform-tools" /tmp/sinergy-sdk-gradle/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/licenses" /tmp/sinergy-sdk-gradle/android-sdk/
-          tar -C /tmp -czf /tmp/sinergy-split/ANDROID-SDK-GRADLE.tar.gz sinergy-sdk-gradle
-
-          mkdir -p /tmp/sinergy-gradle-cache/caches
-          cp -a "$HOME/.gradle/caches/modules-2" /tmp/sinergy-gradle-cache/caches/
-          cp /tmp/crypto-dependencies.txt /tmp/sinergy-gradle-cache/CRYPTO-DEPENDENCIES.txt
-          tar -C /tmp -czf /tmp/sinergy-split/GRADLE-MODULE-CACHE.tar.gz sinergy-gradle-cache
-
-          sha256sum /tmp/sinergy-split/*.tar.gz | tee /tmp/sinergy-split/SHA256SUMS.txt
-          ls -lh /tmp/sinergy-split
+          tar -C /tmp/sinergy-export/jdk -czf /tmp/JDK17.tar.gz .
+          tar -C /tmp/sinergy-export/sdk -czf /tmp/ANDROID-SDK-GRADLE.tar.gz .
+          tar -C /tmp/sinergy-export/cache -czf /tmp/GRADLE-CACHE.tar.gz .
+          sha256sum /tmp/JDK17.tar.gz /tmp/ANDROID-SDK-GRADLE.tar.gz /tmp/GRADLE-CACHE.tar.gz | tee /tmp/SHA256SUMS.txt
+          ls -lh /tmp/JDK17.tar.gz /tmp/ANDROID-SDK-GRADLE.tar.gz /tmp/GRADLE-CACHE.tar.gz
           python3 - <<'PY'
           from pathlib import Path
           limit=512*1024*1024
-          for p in Path('/tmp/sinergy-split').glob('*.tar.gz'):
-              print(p.name, p.stat().st_size)
-              if p.stat().st_size >= limit:
-                  raise SystemExit(f'{p.name} exceeds connector limit')
+          for n in ('JDK17.tar.gz','ANDROID-SDK-GRADLE.tar.gz','GRADLE-CACHE.tar.gz'):
+              p=Path('/tmp')/n
+              if p.stat().st_size >= limit: raise SystemExit(f'{n} too large: {p.stat().st_size}')
           PY
 
-      - name: Upload JDK17
+      - name: Upload JDK
         uses: actions/upload-artifact@v4
         with:
-          name: SINERGY-JDK17-linux-x64
-          path: /tmp/sinergy-split/JDK17.tar.gz
+          name: SINERGY-JDK17
+          path: /tmp/JDK17.tar.gz
           compression-level: 0
           retention-days: 7
 
-      - name: Upload Android SDK and Gradle
+      - name: Upload SDK and Gradle
         uses: actions/upload-artifact@v4
         with:
-          name: SINERGY-ANDROID-SDK-GRADLE-linux-x64
-          path: /tmp/sinergy-split/ANDROID-SDK-GRADLE.tar.gz
+          name: SINERGY-SDK-GRADLE
+          path: /tmp/ANDROID-SDK-GRADLE.tar.gz
           compression-level: 0
           retention-days: 7
 
-      - name: Upload Gradle module cache
+      - name: Upload dependency cache
         uses: actions/upload-artifact@v4
         with:
-          name: SINERGY-GRADLE-MODULE-CACHE
+          name: SINERGY-GRADLE-CACHE
           path: |
-            /tmp/sinergy-split/GRADLE-MODULE-CACHE.tar.gz
-            /tmp/sinergy-split/SHA256SUMS.txt
+            /tmp/GRADLE-CACHE.tar.gz
+            /tmp/SHA256SUMS.txt
           compression-level: 0
           retention-days: 7

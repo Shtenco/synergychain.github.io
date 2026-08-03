@@ -1,4 +1,4 @@
-name: Test SINERGY v3.1 Drive Overlay Download
+name: Verify SINERGY v3.1 CI Payload
 
 on:
   push:
@@ -6,30 +6,36 @@ on:
       - build/sinergy-finance-v31-wallet-multicurrency
     paths:
       - '.github/workflows/test-drive-overlay-download.yml'
+      - 'android/finance-v31-overlay/payload.part*'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/test-drive-overlay-download.yml'
-      - 'android/finance-v31-overlay/**'
+      - 'android/finance-v31-overlay/payload.part*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  test-download:
+  verify-payload:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download overlay from Google Drive
+      - name: Reconstruct and verify v3.1 payload
         shell: bash
         run: |
           set -euxo pipefail
-          URL='https://drive.usercontent.google.com/download?id=1PnHyxyRlKRzEsgQxCnleobVct2vigIyW&export=download&confirm=t'
-          curl -fL --retry 3 --connect-timeout 20 "$URL" -o /tmp/SINERGY-v31-overlay.tar.xz
-          ls -lh /tmp/SINERGY-v31-overlay.tar.xz
-          file /tmp/SINERGY-v31-overlay.tar.xz
-          echo '4558076418b5cd216c806b7227b2efab74da7471e0a4b861c1b3cc6dbfbdc43a  /tmp/SINERGY-v31-overlay.tar.xz' | sha256sum -c -
-          xz --test /tmp/SINERGY-v31-overlay.tar.xz
-          tar -tJf /tmp/SINERGY-v31-overlay.tar.xz | head -30
+          cat android/finance-v31-overlay/payload.part* | tr -d '\r\n' | base64 --decode > /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
+          echo '4db8b113d7e628db644059ed59b1da51be3ccb2c45ce32b1d573387bebbdb702  /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz' | sha256sum -c -
+          xz --test /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
+          mkdir -p /tmp/v31-payload
+          tar -xJf /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz -C /tmp/v31-payload
+          sha256sum -c /tmp/v31-payload/SHA256SUMS.txt
+          test -f /tmp/v31-payload/v31.patch
+          test -f /tmp/v31-payload/modify_sinergy.py
+          test -f /tmp/v31-payload/modify_index.py
+          test -f /tmp/v31-payload/modify_core_v21.py
+          test -f /tmp/v31-payload/sinergy-logo-256.png
+          find /tmp/v31-payload -maxdepth 1 -type f -printf '%f\n' | sort

@@ -61,10 +61,13 @@ done
 
 test -f android/app/src/main/assets/www/js/v22.js
 test -f android/app/src/main/assets/www/js/wallet.js
-grep -R -q "ai.sinergy.finance.crypto" android/app/build.gradle android/app/src/main/AndroidManifest.xml
-grep -R -q "3.0.0-crypto-testnet" android/app/build.gradle android/app/src/main/java
-grep -R -q 'SinergyWalletNative' android/app/src/main/java
-grep -R -q 'MAINNET_BLOCKED' android/app/src/main/java
+echo '=== RESTORED BUILD CONFIG ==='
+cat android/app/build.gradle | tee android/build-diagnostics/app-build.gradle.txt
+echo '=== RESTORED MANIFEST ==='
+cat android/app/src/main/AndroidManifest.xml | tee android/build-diagnostics/AndroidManifest.xml.txt
+grep -R -n "ai.sinergy.finance.crypto\|3.0.0-crypto-testnet\|SinergyWalletNative\|MAINNET_BLOCKED" \
+  android/app/build.gradle android/app/src/main/AndroidManifest.xml android/app/src/main/java \
+  | tee android/build-diagnostics/crypto-markers.txt || true
 
 for js in app v2 v21 v22 wallet finance-core; do
   node --check "android/app/src/main/assets/www/js/${js}.js"

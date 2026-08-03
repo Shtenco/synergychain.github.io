@@ -81,6 +81,16 @@ fi
 
 grep -q "buildToolsVersion '34.0.0'" android/app/build.gradle || \
   sed -i "/compileSdk 34/a\\    buildToolsVersion '34.0.0'" android/app/build.gradle
+sed -i "s/androidx.credentials:credentials:1.5.0/androidx.credentials:credentials:1.3.0/" android/app/build.gradle
+sed -i "s/androidx.credentials:credentials-play-services-auth:1.5.0/androidx.credentials:credentials-play-services-auth:1.3.0/" android/app/build.gradle
+cat >> android/app/build.gradle <<'GRADLE_PIN'
+
+configurations.configureEach {
+    resolutionStrategy.force 'androidx.core:core:1.13.1'
+    resolutionStrategy.force 'androidx.core:core-ktx:1.13.1'
+}
+GRADLE_PIN
+cat android/app/build.gradle | tee android/build-diagnostics/app-build-effective.gradle.txt
 
 gradle -p android clean assembleRelease -x lintVitalRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
 UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'

@@ -3,15 +3,23 @@ name: Export Android Toolchain
 on:
   push:
     branches: [build/sinergy-finance-apk]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   export-toolchain:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -19,6 +27,7 @@ jobs:
       - name: Install Android platform
         shell: bash
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
@@ -27,13 +36,7 @@ jobs:
         with:
           gradle-version: '8.2.1'
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Warm Android and wallet dependencies
+      - name: Resolve exact SINERGY Crypto dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -42,12 +45,12 @@ jobs:
           cat > /tmp/warmup/settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
           dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
-          rootProject.name = 'WalletWarmup'
+          rootProject.name = 'SinergyCryptoWarmup'
           include ':app'
           EOF
           cat > /tmp/warmup/gradle.properties <<'EOF'
           android.useAndroidX=true
-          android.enableJetifier=true
+          android.nonTransitiveRClass=true
           android.suppressUnsupportedCompileSdk=34
           org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
           EOF
@@ -61,15 +64,37 @@ jobs:
           android {
               namespace 'ai.sinergy.warmup'
               compileSdk 34
-              defaultConfig { applicationId 'ai.sinergy.warmup'; minSdk 24; targetSdk 34; versionCode 1; versionName '1.0' }
-              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+              defaultConfig {
+                  applicationId 'ai.sinergy.warmup'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+                  multiDexEnabled true
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              packagingOptions {
+                  resources.excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+              }
+          }
+          configurations.configureEach {
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+              resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
           }
           dependencies {
               implementation 'androidx.core:core:1.13.1'
+              implementation 'androidx.fragment:fragment:1.7.1'
               implementation 'androidx.biometric:biometric:1.1.0'
+              implementation 'androidx.credentials:credentials:1.5.0'
+              implementation 'androidx.credentials:credentials-play-services-auth:1.5.0'
+              implementation 'androidx.work:work-runtime:2.9.0'
+              implementation 'androidx.multidex:multidex:2.0.1'
               implementation 'com.google.mlkit:text-recognition:16.0.1'
-              implementation 'org.bouncycastle:bcprov-jdk15to18:1.85.1'
-              testImplementation 'junit:junit:4.13.2'
+              implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
           }
           EOF
           cat > /tmp/warmup/app/src/main/AndroidManifest.xml <<'EOF'
@@ -84,25 +109,31 @@ jobs:
           public final class MainActivity extends android.app.Activity { }
           EOF
           export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
-          gradle -p /tmp/warmup clean testDebugUnitTest assembleDebug --stacktrace
+          gradle -p /tmp/warmup --no-daemon :app:dependencies --configuration debugRuntimeClasspath | tee /tmp/crypto-dependencies.txt
+          grep -q 'androidx.credentials:credentials:1.5.0' /tmp/crypto-dependencies.txt
+          grep -q 'androidx.work:work-runtime:2.9.0' /tmp/crypto-dependencies.txt
+          grep -q 'org.bouncycastle:bcprov-jdk18on:1.78.1' /tmp/crypto-dependencies.txt
 
-      - name: Package reproducible Linux toolchain
+      - name: Package Linux Android toolchain
         shell: bash
         run: |
           set -euo pipefail
           export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
           GRADLE_BIN="$(readlink -f "$(command -v gradle)")"
           GRADLE_HOME="$(dirname "$(dirname "$GRADLE_BIN")")"
-          mkdir -p /tmp/sinergy-toolchain/gradle /tmp/sinergy-toolchain/jdk17 /tmp/sinergy-toolchain/android-sdk /tmp/sinergy-toolchain/gradle-user-home
-          cp -a "$GRADLE_HOME/." /tmp/sinergy-toolchain/gradle/
-          cp -a "$JAVA_HOME/." /tmp/sinergy-toolchain/jdk17/
-          cp -a "$ANDROID_SDK_ROOT/build-tools" /tmp/sinergy-toolchain/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/platforms" /tmp/sinergy-toolchain/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/platform-tools" /tmp/sinergy-toolchain/android-sdk/
-          cp -a "$ANDROID_SDK_ROOT/licenses" /tmp/sinergy-toolchain/android-sdk/
-          cp -a "$HOME/.gradle/caches" /tmp/sinergy-toolchain/gradle-user-home/
-          cp -a "$HOME/.gradle/native" /tmp/sinergy-toolchain/gradle-user-home/ 2>/dev/null || true
-          printf '%s\n' 'Temurin JDK 17 / Gradle 8.2.1 / Android SDK 34 / build-tools 34.0.0 / warmed wallet dependencies' > /tmp/sinergy-toolchain/README.txt
+          OUT=/tmp/sinergy-toolchain
+          rm -rf "$OUT"
+          mkdir -p "$OUT/gradle" "$OUT/jdk17" "$OUT/android-sdk" "$OUT/gradle-user-home"
+          cp -a "$GRADLE_HOME/." "$OUT/gradle/"
+          cp -a "$JAVA_HOME/." "$OUT/jdk17/"
+          cp -a "$ANDROID_SDK_ROOT/build-tools" "$OUT/android-sdk/"
+          cp -a "$ANDROID_SDK_ROOT/platforms" "$OUT/android-sdk/"
+          cp -a "$ANDROID_SDK_ROOT/platform-tools" "$OUT/android-sdk/"
+          cp -a "$ANDROID_SDK_ROOT/licenses" "$OUT/android-sdk/"
+          cp -a "$HOME/.gradle/caches" "$OUT/gradle-user-home/"
+          cp -a "$HOME/.gradle/native" "$OUT/gradle-user-home/" 2>/dev/null || true
+          cp /tmp/crypto-dependencies.txt "$OUT/CRYPTO-DEPENDENCIES.txt"
+          printf '%s\n' 'Temurin JDK 17 / Gradle 8.2.1 / Android SDK 34 / exact SINERGY Finance Crypto dependencies' > "$OUT/README.txt"
           tar -C /tmp -czf /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz sinergy-toolchain
           sha256sum /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz > /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.sha256
           ls -lh /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.tar.gz
@@ -116,3 +147,4 @@ jobs:
             /tmp/SINERGY-ANDROID-TOOLCHAIN-linux-x64.sha256
           if-no-files-found: error
           compression-level: 0
+          retention-days: 7

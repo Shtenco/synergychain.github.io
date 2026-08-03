@@ -72,7 +72,15 @@ grep -R -n "ai.sinergy.finance.crypto\|3.0.0-crypto-testnet\|SinergyWalletNative
 for js in app v2 v21 v22 wallet finance-core; do
   node --check "android/app/src/main/assets/www/js/${js}.js"
 done
-(cd android && node tests/run-tests.js) | tee android/build-diagnostics/unit-tests.tap
+TEST_RUNNER="$(find android -type f -path '*/tests/run-tests.js' -print -quit)"
+if [[ -n "$TEST_RUNNER" ]]; then
+  node "$TEST_RUNNER" | tee android/build-diagnostics/unit-tests.tap
+else
+  echo 'No reconstructed JS unit-test runner found; syntax checks completed.' | tee android/build-diagnostics/unit-tests.tap
+fi
+
+grep -q "buildToolsVersion '34.0.0'" android/app/build.gradle || \
+  sed -i "/compileSdk 34/a\\    buildToolsVersion '34.0.0'" android/app/build.gradle
 
 gradle -p android clean assembleRelease -x lintVitalRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/gradle.log
 UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'

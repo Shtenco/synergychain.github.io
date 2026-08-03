@@ -1,0 +1,29 @@
+name: Test SINERGY v3.1 Drive Overlay Download
+
+on:
+  push:
+    branches:
+      - build/sinergy-finance-v31-wallet-multicurrency
+    paths:
+      - '.github/workflows/test-drive-overlay-download.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-download:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download overlay from Google Drive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          URL='https://drive.usercontent.google.com/download?id=1PnHyxyRlKRzEsgQxCnleobVct2vigIyW&export=download&confirm=t'
+          curl -fL --retry 3 --connect-timeout 20 "$URL" -o /tmp/SINERGY-v31-overlay.tar.xz
+          ls -lh /tmp/SINERGY-v31-overlay.tar.xz
+          file /tmp/SINERGY-v31-overlay.tar.xz
+          echo '4558076418b5cd216c806b7227b2efab74da7471e0a4b861c1b3cc6dbfbdc43a  /tmp/SINERGY-v31-overlay.tar.xz' | sha256sum -c -
+          xz --test /tmp/SINERGY-v31-overlay.tar.xz
+          tar -tJf /tmp/SINERGY-v31-overlay.tar.xz | head -30

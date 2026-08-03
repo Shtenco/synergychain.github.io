@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           cat .ci/syna-v5/project.zip.b64.part-* | base64 --decode > /tmp/syna-v5.zip
-          echo "5fec7b54d06f5f5cb6892168d73139460e8b40af17c2287c2c1d3baf228a8641  /tmp/syna-v5.zip" | sha256sum --check
+          echo "8736d43ed08d374a208532f871921bfe2cc1cafb5db5e04d0b057d5d0e09a680  /tmp/syna-v5.zip" | sha256sum --check
           mkdir -p /tmp/syna-v5
           unzip -q /tmp/syna-v5.zip -d /tmp/syna-v5
           test -f /tmp/syna-v5/synergy-syna-shielded-v5-fixed/package.json

@@ -6,6 +6,12 @@ on:
       - build/sinergy-finance-v31-wallet-multicurrency
     paths:
       - '.github/workflows/test-drive-overlay-download.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/test-drive-overlay-download.yml'
+      - 'android/finance-v31-overlay/**'
   workflow_dispatch:
 
 permissions:

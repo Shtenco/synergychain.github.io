@@ -90,7 +90,30 @@ def main() -> int:
         safe = safe.replace(marker, helper + marker, 1)
     safe_path.write_text(safe, encoding="utf-8")
 
-    print("AndroidX Credentials and Web3j compatibility fixes applied")
+    bridge_path = wallet_dir / "NativeWalletBridge.java"
+    bridge = bridge_path.read_text(encoding="utf-8")
+    method_start = bridge.find("    public void assetBalance(")
+    if method_start < 0:
+        raise RuntimeError("assetBalance method missing")
+    method_end = bridge.find("    @JavascriptInterface", method_start + 8)
+    if method_end < 0:
+        raise RuntimeError("assetBalance method boundary missing")
+    block = bridge[method_start:method_end]
+    if "final int requestedDecimals = decimals;" not in block:
+        block = replace_required(
+            block,
+            "    public void assetBalance(String requestId, String networkJson, String tokenAddress, int decimals, String symbol) {\n        run(requestId, () -> {",
+            "    public void assetBalance(String requestId, String networkJson, String tokenAddress, int decimals, String symbol) {\n        final int requestedDecimals = decimals;\n        run(requestId, () -> {\n            int effectiveDecimals = requestedDecimals;",
+            "assetBalance lambda decimal capture",
+        )
+    block = block.replace("decimals = 18;", "effectiveDecimals = 18;")
+    block = block.replace("if (decimals < 0 || decimals > 36)", "if (effectiveDecimals < 0 || effectiveDecimals > 36)")
+    block = block.replace('.put("decimals", decimals)', '.put("decimals", effectiveDecimals)')
+    block = block.replace("formatUnits(raw, decimals)", "formatUnits(raw, effectiveDecimals)")
+    bridge = bridge[:method_start] + block + bridge[method_end:]
+    bridge_path.write_text(bridge, encoding="utf-8")
+
+    print("AndroidX Credentials, Web3j and Java lambda compatibility fixes applied")
     return 0
 
 

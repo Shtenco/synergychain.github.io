@@ -18,8 +18,8 @@ const passkey = () => read('java', 'ai', 'sinergy', 'finance', 'wallet', 'Passke
 const safe = () => read('java', 'ai', 'sinergy', 'finance', 'wallet', 'SafeTreasuryClient.java');
 const walletJs = () => read('assets', 'www', 'js', 'wallet.js');
 
-// These checks deliberately validate the exact archived Crypto Layer rather than
-// stale product-version assertions from the older v2.1 contract suite.
+// These checks validate both the archived Crypto Layer and its v3.1/v3.2
+// multicurrency product overlay. The same suite intentionally runs at either stage.
 test('required native Crypto Layer files exist', () => {
   for (const file of [
     ['java','ai','sinergy','finance','wallet','WalletVault.java'],
@@ -87,8 +87,8 @@ test('wallet web layer exposes send flows and non-exportable security status', (
   assert.match(s, /Android Keystore/);
 });
 
-test('Android project is the separate crypto application before v3.1 overlay', () => {
+test('Android project is a supported SINERGY crypto or multicurrency application stage', () => {
   const gradle = fs.readFileSync(path.join(androidRoot, 'app', 'build.gradle'), 'utf8');
-  assert.match(gradle, /applicationId\s+'ai\.sinergy\.finance\.crypto'/);
-  assert.match(gradle, /versionName\s+'3\.0\.0-crypto-testnet'/);
+  assert.match(gradle, /applicationId\s+'ai\.sinergy\.finance\.(?:crypto|wallet)'/);
+  assert.match(gradle, /versionName\s+'(?:3\.0\.0-crypto-testnet|3\.1\.0-wallet-multicurrency)'/);
 });

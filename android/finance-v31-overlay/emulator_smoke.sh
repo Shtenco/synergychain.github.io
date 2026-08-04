@@ -52,6 +52,7 @@ unlock_with_pin
 
 log 'Building Android instrumentation APK from the exact release source tree'
 python3 android/finance-v31-overlay/inject_native_wallet_tests.py "$PROJECT_ROOT" | tee "$OUT/inject-native-tests.txt"
+python3 android/finance-v31-overlay/patch_wallet_test_auth.py "$PROJECT_ROOT" | tee "$OUT/patch-wallet-test-auth.txt"
 export JAVA_HOME="${JAVA_HOME_17_X64:-${JAVA_HOME:-}}"
 timeout --foreground 600s gradle -p "$PROJECT_ROOT" assembleDebug assembleDebugAndroidTest --stacktrace --warning-mode all 2>&1 | tee "$OUT/android-test-build.txt"
 test -f "$DEBUG_APK" || fail "debug APK missing: $DEBUG_APK"

@@ -21,20 +21,23 @@ jobs:
           repository: madler/zlib
           ref: v1.3.1
           path: zlib
-      - name: Configure zlib x64
+      - name: Configure and build zlib x64
         shell: pwsh
-        run: cmake -S zlib -B zbuild -A x64 -DZLIB_BUILD_EXAMPLES=OFF
-      - name: Build zlib static
-        shell: pwsh
-        run: cmake --build zbuild --config Release --target zlibstatic
-      - name: Build exact wrapper DLL
-        shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cl /nologo /O2 /LD /MT /I zlib ops\midas-zlib\MidasExactZlib.c zbuild\Release\zlibstatic.lib user32.lib /link /OUT:MidasExactZlib.dll
+          cmake -S zlib -B zbuild -A x64 -DZLIB_BUILD_EXAMPLES=OFF
+          cmake --build zbuild --config Release --target zlibstatic
+      - name: Configure and build wrapper x64
+        shell: pwsh
+        run: |
+          $root = (Get-Location).Path.Replace('\\','/')
+          cmake -S ops/midas-zlib -B wrapper-build -A x64 -DZLIB_SOURCE_DIR="$root/zlib" -DZLIB_BUILD_DIR="$root/zbuild"
+          cmake --build wrapper-build --config Release
+          Copy-Item wrapper-build/Release/MidasExactZlib.dll .
       - name: Verify exports
-        shell: cmd
-        run: dumpbin /exports MidasExactZlib.dll
+        shell: pwsh
+        run: |
+          $dumpbin = Get-ChildItem 'C:/Program Files/Microsoft Visual Studio' -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64.x64' } | Select-Object -First 1
+          & $dumpbin.FullName /exports MidasExactZlib.dll
       - uses: actions/upload-artifact@v4
         with:
           name: MidasExactZlib-x64

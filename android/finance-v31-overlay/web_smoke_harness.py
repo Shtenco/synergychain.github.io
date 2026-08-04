@@ -47,7 +47,12 @@ TEST = r'''
     document.title=ok?'SINERGY_SMOKE_PASS':'SINERGY_SMOKE_FAIL';
   };
   try {
-    await waitFor(() => window.SinergyApp?.getState, 'SinergyApp did not initialize');
+    await waitFor(() => window.SinergyApp?.getState, 'SinergyApp API did not initialize');
+    await waitFor(() => document.readyState !== 'loading', 'DOMContentLoaded did not fire');
+    await waitFor(() => document.querySelector('#accountForm [name="groupId"]')?.options?.length > 0, 'Finance event bindings/selects did not initialize');
+    await waitFor(() => window.SinergyWallet?.onNativeResult, 'Wallet web layer did not initialize');
+    await sleep(100);
+
     const phase=sessionStorage.getItem('sinergySmokePhase')||'reset';
     if(phase==='reset'){
       localStorage.clear();
@@ -56,29 +61,33 @@ TEST = r'''
       return;
     }
     if(phase==='create'){
-      const createAccount=(name,currency)=>{
+      const createAccount=async(name,currency)=>{
         document.querySelector('[data-route="accounts"]').click();
         document.querySelector('[data-open="accountModal"]').click();
         const form=document.getElementById('accountForm');
+        await waitFor(() => form.open !== false || document.getElementById('accountModal').open, 'Account dialog did not open');
         form.elements.name.value=name;
         form.elements.type.value='crypto';
         assert([...form.elements.currency.options].some(o=>o.value===currency),`Missing currency option ${currency}`);
         form.elements.currency.value=currency;
         form.elements.balance.value='1.25';
-        form.dispatchEvent(new SubmitEvent('submit',{bubbles:true,cancelable:true,submitter:form.querySelector('[type="submit"]')}));
+        form.requestSubmit(form.querySelector('[type="submit"]'));
+        await waitFor(() => window.SinergyApp.getState().accounts.some(a=>a.currency===currency&&a.name===name),`Account ${currency} was not created`);
       };
-      for(const [name,currency] of [['BTC Wallet','BTC'],['ETH Wallet','ETH'],['SYNA Wallet','SYNA'],['USDT Wallet','USDT']]) createAccount(name,currency);
+      for(const [name,currency] of [['BTC Wallet','BTC'],['ETH Wallet','ETH'],['SYNA Wallet','SYNA'],['USDT Wallet','USDT']]) await createAccount(name,currency);
       const state=window.SinergyApp.getState();
       for(const code of ['BTC','ETH','SYNA','USDT']) assert(state.accounts.some(a=>a.currency===code),`Account ${code} was not created`);
       document.querySelector('[data-route="analytics"]').click();
       document.querySelector('#analyticsPeriod [data-period="all"]').click();
-      assert(window.SinergyApp.getState().profile.analyticsPeriod==='all','All-time analytics period failed');
+      await waitFor(() => window.SinergyApp.getState().profile.analyticsPeriod==='all','All-time analytics period failed');
       document.querySelector('#analyticsPeriod [data-period="custom"]').click();
       document.getElementById('analyticsFrom').value='2026-01-01';
       document.getElementById('analyticsTo').value='2026-12-31';
       document.getElementById('applyAnalyticsRange').click();
-      const p=window.SinergyApp.getState().profile;
-      assert(p.analyticsPeriod==='custom'&&p.analyticsFrom==='2026-01-01'&&p.analyticsTo==='2026-12-31','Custom analytics range failed');
+      await waitFor(() => {
+        const p=window.SinergyApp.getState().profile;
+        return p.analyticsPeriod==='custom'&&p.analyticsFrom==='2026-01-01'&&p.analyticsTo==='2026-12-31';
+      },'Custom analytics range failed');
       assert((localStorage.getItem('sinergy_finance_state_v1')||'').includes('SYNA Wallet'),'Finance state was not written to localStorage');
       sessionStorage.setItem('sinergySmokePhase','verify');
       location.reload();

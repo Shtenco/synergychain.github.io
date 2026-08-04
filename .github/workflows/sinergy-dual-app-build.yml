@@ -1,0 +1,299 @@
+name: Build SINERGY_FINANCE and SINERGY_WALLET Android 14
+
+on:
+  push:
+    branches: [build/sinergy-finance-v31-wallet-multicurrency]
+    paths:
+      - 'android/finance-v31-overlay/apply_branding.py'
+      - 'android/finance-v31-overlay/prepare_wallet_variant.py'
+      - '.github/workflows/sinergy-dual-app-build.yml'
+      - 'android/finance-v31-overlay/dual-build-trigger.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FINANCE_APK: SINERGY_FINANCE-v3.2.0-ANDROID14-RELEASE.apk
+  WALLET_APK: SINERGY_WALLET-v1.0.0-ANDROID14-RELEASE.apk
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 14 platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'system-images;android-34;google_apis;x86_64'
+
+      - name: Set up Gradle 8.2.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Restore verified SINERGY Finance base
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf android/app/src android/app/build android/build-diagnostics android/release
+          mkdir -p android/build-diagnostics android/release
+          exec > >(tee android/build-diagnostics/restore.log) 2>&1
+
+          cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/v1.tar.xz
+          tar -xJf /tmp/v1.tar.xz -C android/app
+
+          cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/v2.patch.xz
+          xz -dc /tmp/v2.patch.xz > /tmp/v2.patch
+          (cd android/app && patch --batch -p1 < /tmp/v2.patch)
+          rm -rf android/app/src/main
+          mv android/app/src/finance android/app/src/main
+          cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+
+          V21_PARTS=(
+            android/finance-bundle/v21safe.part00
+            android/finance-bundle/v21safe.part01
+            android/finance-bundle/v21safe.part02
+            android/finance-bundle/v21safe.part03
+            android/finance-bundle/v21safe.part04
+            android/finance-bundle/v21safe.part05
+            android/finance-bundle/v21safe.part06a
+            android/finance-bundle/v21safe.part06b
+            android/finance-bundle/v21safe.part06c
+            android/finance-bundle/v21safe.part06d
+            android/finance-bundle/v21safe.part07
+            android/finance-bundle/v21safe.part08
+            android/finance-bundle/v21safe.part09
+            android/finance-bundle/v21safe.part10
+          )
+          cat "${V21_PARTS[@]}" > /tmp/v21.patch.xz.b64
+          echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/v21.patch.xz.b64' | sha256sum -c -
+          base64 -d /tmp/v21.patch.xz.b64 > /tmp/v21.patch.xz
+          echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/v21.patch.xz' | sha256sum -c -
+          xz -dc /tmp/v21.patch.xz > /tmp/v21.patch
+          (cd android/app && patch --batch -p1 < /tmp/v21.patch)
+
+      - name: Apply v2.2 Crypto Layer and v3.1 multicurrency overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee android/build-diagnostics/overlay.log) 2>&1
+
+          base64 -d android/finance-crypto-patch/v22-supplement.tar.xz.b64 > /tmp/v22-supplement.tar.xz
+          echo '0e22a9bc73d4dbce71433e7212fa02377e7644fbc15a8f2102e13187d770b5e0  /tmp/v22-supplement.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v22-supplement.tar.xz -C android
+
+          cat android/finance-crypto-patch/part*.b64 | base64 -d > /tmp/crypto-layer.tar.xz
+          echo 'f5e8eca8bf2ba63ef700c6b2dcc4f5a36d6e00c5ac26503c0439145090a573ba  /tmp/crypto-layer.tar.xz' | sha256sum -c -
+          xz -t /tmp/crypto-layer.tar.xz
+          tar -xJf /tmp/crypto-layer.tar.xz -C android
+
+          cat android/finance-v31-overlay/payload.part* | tr -d '\r\n' | base64 --decode > /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz
+          echo '4db8b113d7e628db644059ed59b1da51be3ccb2c45ce32b1d573387bebbdb702  /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz' | sha256sum -c -
+          rm -rf /tmp/v31-payload && mkdir -p /tmp/v31-payload
+          tar -xJf /tmp/SINERGY-v31-CI-PAYLOAD.tar.xz -C /tmp/v31-payload
+          (cd android && patch --batch -p1 < /tmp/v31-payload/v31.patch)
+          python3 /tmp/v31-payload/modify_sinergy.py android/app/src/main
+          python3 /tmp/v31-payload/modify_index.py android/app/src/main
+          python3 /tmp/v31-payload/modify_core_v21.py android/app/src/main
+          python3 android/finance-v31-overlay/fix_android_compat.py android/app/src/main
+          python3 android/finance-v31-overlay/add_synergy_currencies.py android/app/src/main
+
+          node --check android/app/src/main/assets/www/js/app.js
+          node --check android/app/src/main/assets/www/js/finance-core.js
+          node --check android/app/src/main/assets/www/js/v21.js
+          node --check android/app/src/main/assets/www/js/wallet.js
+          (cd android && node tests/run-tests.js) | tee android/build-diagnostics/unit-tests.tap
+
+      - name: Prepare exact user logo for Android launcher and splash
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOGO=/tmp/v31-payload/sinergy-logo-256.png
+          echo '4b7dabfd11bc5ff0e6b2934fb12f6f9573d767837e43441cbfc863b1b6a08b21  /tmp/v31-payload/sinergy-logo-256.png' | sha256sum -c -
+          rm -rf /tmp/sinergy-branding
+          mkdir -p /tmp/sinergy-branding/drawable-nodpi
+          cp "$LOGO" /tmp/sinergy-branding/drawable-nodpi/sinergy_logo.png
+          cp "$LOGO" /tmp/sinergy-branding/drawable-nodpi/sinergy_splash.png
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "/tmp/sinergy-branding/mipmap-${density}"
+            cp "$LOGO" "/tmp/sinergy-branding/mipmap-${density}/ic_launcher.png"
+            cp "$LOGO" "/tmp/sinergy-branding/mipmap-${density}/ic_launcher_round.png"
+          done
+          test -s /tmp/sinergy-branding/mipmap-xxxhdpi/ic_launcher.png
+          test -s /tmp/sinergy-branding/drawable-nodpi/sinergy_splash.png
+
+      - name: Brand and name SINERGY_FINANCE
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 android/finance-v31-overlay/apply_branding.py android/app \
+            --label SINERGY_FINANCE \
+            --application-id ai.sinergy.finance \
+            --version-name 3.2.0 \
+            --version-code 2 \
+            --assets /tmp/sinergy-branding
+          grep -q 'android:icon="@mipmap/ic_launcher"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:windowSplashScreenAnimatedIcon' android/app/src/main/res/values-v31/sinergy_branding.xml
+          grep -q '<string name="app_name">SINERGY_FINANCE</string>' android/app/src/main/res/values/sinergy_branding.xml
+
+      - name: Build SINERGY_FINANCE release
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p android clean assembleRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/finance-build.log
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk /tmp/sinergy-finance-unsigned.apk
+
+      - name: Prepare SINERGY_WALLET separate application
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 android/finance-v31-overlay/prepare_wallet_variant.py android/app
+          grep -q "applicationId 'ai.sinergy.wallet'" android/app/build.gradle
+          grep -q '<string name="app_name">SINERGY_WALLET</string>' android/app/src/main/res/values/sinergy_branding.xml
+          grep -q 'FREE2EX WebREST' android/app/src/main/assets/www/js/exchange-belarus.js
+          grep -q 'api.nbrb.by/exrates/rates/RUB' android/app/src/main/assets/www/js/exchange-belarus.js
+          grep -q 'BYNEX partner connector' android/app/src/main/assets/www/index.html
+          node --check android/app/src/main/assets/www/js/exchange-belarus.js
+
+      - name: Build SINERGY_WALLET release
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle -p android clean assembleRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/wallet-build.log
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk /tmp/sinergy-wallet-unsigned.apk
+
+      - name: Align, release-sign and verify both APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -keystore /tmp/sinergy-dual-release.jks -storepass "$PASS" -keypass "$PASS" \
+            -alias sinergy-dual -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=SINERGY Android Release,O=SINERGY,C=KZ'
+
+          sign_one() {
+            local src="$1" out="$2" aligned="$3"
+            "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$src" "$aligned"
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
+              --ks /tmp/sinergy-dual-release.jks --ks-key-alias sinergy-dual \
+              --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+              --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+              --out "$out" "$aligned"
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$out"
+            "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 "$out" >/dev/null
+            unzip -t "$out" >/dev/null
+          }
+
+          sign_one /tmp/sinergy-finance-unsigned.apk "android/release/${FINANCE_APK}" /tmp/finance-aligned.apk
+          sign_one /tmp/sinergy-wallet-unsigned.apk "android/release/${WALLET_APK}" /tmp/wallet-aligned.apk
+
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "android/release/${FINANCE_APK}" | tee android/build-diagnostics/finance-badging.txt
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "android/release/${WALLET_APK}" | tee android/build-diagnostics/wallet-badging.txt
+          grep -q "package: name='ai.sinergy.finance'" android/build-diagnostics/finance-badging.txt
+          grep -q "application-label:'SINERGY_FINANCE'" android/build-diagnostics/finance-badging.txt
+          grep -q "targetSdkVersion:'34'" android/build-diagnostics/finance-badging.txt
+          grep -q "package: name='ai.sinergy.wallet'" android/build-diagnostics/wallet-badging.txt
+          grep -q "application-label:'SINERGY_WALLET'" android/build-diagnostics/wallet-badging.txt
+          grep -q "targetSdkVersion:'34'" android/build-diagnostics/wallet-badging.txt
+          sha256sum "android/release/${FINANCE_APK}" "android/release/${WALLET_APK}" | tee android/release/SHA256SUMS.txt
+
+      - name: Android 14 install and launch smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            mkdir -p android/emulator-smoke
+            adb install -r "android/release/${FINANCE_APK}"
+            adb shell monkey -p ai.sinergy.finance -c android.intent.category.LAUNCHER 1
+            sleep 8
+            adb shell pidof ai.sinergy.finance
+            adb shell input keyevent HOME
+            sleep 2
+            adb shell uiautomator dump /sdcard/finance-launcher.xml || true
+            adb pull /sdcard/finance-launcher.xml android/emulator-smoke/finance-launcher.xml || true
+            adb exec-out screencap -p > android/emulator-smoke/finance-launcher.png
+            adb uninstall ai.sinergy.finance
+
+            adb install -r "android/release/${WALLET_APK}"
+            adb shell monkey -p ai.sinergy.wallet -c android.intent.category.LAUNCHER 1
+            sleep 8
+            adb shell pidof ai.sinergy.wallet
+            adb shell input keyevent HOME
+            sleep 2
+            adb shell uiautomator dump /sdcard/wallet-launcher.xml || true
+            adb pull /sdcard/wallet-launcher.xml android/emulator-smoke/wallet-launcher.xml || true
+            adb exec-out screencap -p > android/emulator-smoke/wallet-launcher.png
+            printf 'PASS Android 14: both APKs install and launch\n' | tee android/emulator-smoke/result.txt
+
+      - name: Package reports
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/release
+          cp android/build-diagnostics/finance-badging.txt android/release/FINANCE-APK-BADGING.txt
+          cp android/build-diagnostics/wallet-badging.txt android/release/WALLET-APK-BADGING.txt
+          cat > android/release/README-RU.txt <<'EOF'
+          SINERGY Android dual release
+
+          1) SINERGY_FINANCE — финансовый учёт, мультивалютные счета, аналитика и встроенный некастодиальный контур.
+          Package: ai.sinergy.finance
+          Label: SINERGY_FINANCE
+
+          2) SINERGY_WALLET — отдельный некастодиальный EVM-кошелёк.
+          Package: ai.sinergy.wallet
+          Label: SINERGY_WALLET
+          Обменный модуль: официальный RUB/BYN API НБРБ, FREE2EX WebREST connector, BYNEX partner connector.
+          Реальное выставление заявок у операторов требует KYC и партнёрских API-учётных данных; секреты не вшиваются в APK.
+
+          Оба APK используют точный пользовательский зелёно-золотой логотип как launcher icon, round icon, adaptive icon и Android 12–14 splash icon.
+          Подпись данной CI-сборки тестовая release-подпись. Для Google Play нужен постоянный production keystore.
+          EOF
+
+      - name: Upload dual release APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-ANDROID14-DUAL-RELEASE
+          path: |
+            android/release/${{ env.FINANCE_APK }}
+            android/release/${{ env.WALLET_APK }}
+            android/release/SHA256SUMS.txt
+            android/release/README-RU.txt
+            android/release/*-APK-BADGING.txt
+            android/emulator-smoke/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-ANDROID14-DUAL-DIAGNOSTICS
+          path: |
+            android/build-diagnostics/**
+            android/emulator-smoke/**
+          if-no-files-found: warn
+          retention-days: 14

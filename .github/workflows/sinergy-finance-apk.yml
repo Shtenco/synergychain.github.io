@@ -1,0 +1,119 @@
+name: Build SINERGY Finance APK
+
+on:
+  push:
+    branches: [build/sinergy-finance-apk]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android platform
+      shell: bash
+      run: |
+        yes | sdkmanager --licenses >/dev/null || true
+        sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+    - name: Set up Gradle 8.2.1
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.2.1'
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Restore exact v2.1 sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p android/build-diagnostics
+        exec > >(tee android/build-diagnostics/restore.log) 2>&1
+
+        cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/v1.tar.xz
+        tar -xJf /tmp/v1.tar.xz -C android/app
+
+        cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/v2.patch.xz
+        xz -dc /tmp/v2.patch.xz > /tmp/v2.patch
+        (cd android/app && patch --batch -p1 < /tmp/v2.patch)
+        rm -rf android/app/src/main
+        mv android/app/src/finance android/app/src/main
+        cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+
+        V21_PARTS=(
+          android/finance-bundle/v21safe.part00
+          android/finance-bundle/v21safe.part01
+          android/finance-bundle/v21safe.part02
+          android/finance-bundle/v21safe.part03
+          android/finance-bundle/v21safe.part04
+          android/finance-bundle/v21safe.part05
+          android/finance-bundle/v21safe.part06a
+          android/finance-bundle/v21safe.part06b
+          android/finance-bundle/v21safe.part06c
+          android/finance-bundle/v21safe.part06d
+          android/finance-bundle/v21safe.part07
+          android/finance-bundle/v21safe.part08
+          android/finance-bundle/v21safe.part09
+          android/finance-bundle/v21safe.part10
+        )
+        cat "${V21_PARTS[@]}" > /tmp/v21.patch.xz.b64
+        echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/v21.patch.xz.b64' | sha256sum -c -
+        base64 -d /tmp/v21.patch.xz.b64 > /tmp/v21.patch.xz
+        echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/v21.patch.xz' | sha256sum -c -
+        xz -t /tmp/v21.patch.xz
+        xz -dc /tmp/v21.patch.xz > /tmp/v21.patch
+        (cd android/app && patch --batch -p1 < /tmp/v21.patch)
+
+        test -f android/app/src/main/assets/www/js/finance-core.js
+        test -f android/app/src/main/assets/www/js/v21.js
+        grep -q "versionName '2.1.0'" android/app/build.gradle
+        grep -q 'return "2.1.0"' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
+        grep -q 'БИБЛИОТЕКА' android/app/src/main/assets/www/index.html
+        grep -q 'incomeDonut' android/app/src/main/assets/www/index.html
+        grep -q 'customCategories' android/app/src/main/assets/www/js/app.js
+        node --check android/app/src/main/assets/www/js/finance-core.js
+        node --check android/app/src/main/assets/www/js/app.js
+        node --check android/app/src/main/assets/www/js/v2.js
+        node --check android/app/src/main/assets/www/js/v21.js
+
+    - name: Build debug APK
+      shell: bash
+      run: |
+        set -o pipefail
+        export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
+        gradle -p android clean assembleDebug --stacktrace --info 2>&1 | tee android/build-diagnostics/build.log
+
+    - name: Verify APK
+      shell: bash
+      run: |
+        test -f android/app/build/outputs/apk/debug/app-debug.apk
+        unzip -t android/app/build/outputs/apk/debug/app-debug.apk | tee android/build-diagnostics/apk-integrity.txt
+        unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep 'assets/www/js/v21.js'
+        unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep 'assets/www/js/finance-core.js'
+        sha256sum android/app/build/outputs/apk/debug/app-debug.apk | tee android/app/build/outputs/apk/debug/SHA256SUMS.txt
+
+    - name: Upload diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: SINERGY-FINANCE-v2.1-build-diagnostics
+        path: android/build-diagnostics
+        if-no-files-found: warn
+
+    - name: Upload APK
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: SINERGY-FINANCE-v2.1.0
+        path: |
+          android/app/build/outputs/apk/debug/app-debug.apk
+          android/app/build/outputs/apk/debug/SHA256SUMS.txt
+        if-no-files-found: error

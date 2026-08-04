@@ -4,6 +4,10 @@
 The tests execute inside an Android 14 emulator and exercise the real WalletVault:
 Android Keystore encryption, 12-word BIP39 creation, deterministic mnemonic import,
 address derivation, encrypted persistence, unlock and mnemonic non-persistence.
+
+Android Keystore authentication is refreshed from the system credential-confirmation
+screen immediately before every test. This mirrors the production BiometricPrompt /
+DEVICE_CREDENTIAL flow and avoids relying on a stale host-side ADB unlock token.
 """
 
 from pathlib import Path
@@ -13,10 +17,15 @@ TEST_SOURCE = r'''package ai.sinergy.finance.wallet;
 
 import static org.junit.Assert.*;
 
+import android.app.KeyguardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.json.JSONObject;
 import org.junit.After;
@@ -26,20 +35,60 @@ import org.junit.runner.RunWith;
 import org.web3j.crypto.Keys;
 import org.web3j.crypto.MnemonicUtils;
 
+import java.io.FileInputStream;
+
 @RunWith(AndroidJUnit4.class)
 public final class WalletVaultInstrumentedTest {
+    private Context context;
     private WalletVault vault;
 
     @Before
     public void setUp() throws Exception {
-        Context context = ApplicationProvider.getApplicationContext();
+        context = ApplicationProvider.getApplicationContext();
         vault = new WalletVault(context);
         vault.deleteWallet();
+        confirmDeviceCredential();
     }
 
     @After
     public void tearDown() throws Exception {
         vault.deleteWallet();
+    }
+
+    private void confirmDeviceCredential() throws Exception {
+        KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
+        assertNotNull("KeyguardManager unavailable", keyguard);
+        assertTrue("Secure device credential was not configured", keyguard.isDeviceSecure());
+
+        Intent confirmation = keyguard.createConfirmDeviceCredentialIntent(
+            "SINERGY Wallet test",
+            "Confirm Android Keystore access"
+        );
+        assertNotNull("Credential confirmation intent unavailable", confirmation);
+        confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        context.startActivity(confirmation);
+
+        // Wait until SystemUI has presented the PIN confirmation screen, then enter
+        // the PIN configured by emulator_smoke.sh. executeShellCommand output is
+        // drained so every input command is completed before the next one begins.
+        SystemClock.sleep(1500L);
+        shell("input text 1234");
+        shell("input keyevent KEYCODE_ENTER");
+        SystemClock.sleep(2000L);
+    }
+
+    private static void shell(String command) throws Exception {
+        ParcelFileDescriptor descriptor = InstrumentationRegistry.getInstrumentation()
+            .getUiAutomation()
+            .executeShellCommand(command);
+        try (FileInputStream input = new FileInputStream(descriptor.getFileDescriptor())) {
+            byte[] buffer = new byte[1024];
+            while (input.read(buffer) != -1) {
+                // Drain the shell pipe so command completion is deterministic.
+            }
+        } finally {
+            descriptor.close();
+        }
     }
 
     @Test

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Compile-compatibility fixes for the archived Crypto Layer dependencies.
+"""Compile-compatibility and runtime fixes for the archived Crypto Layer.
 
 The original layer targeted earlier AndroidX Credentials/Web3j signatures.
 This script preserves behavior while adapting imports and type signatures to
-AndroidX Credentials 1.5.0 and Web3j 4.14.0 used by the v3.1 build.
+AndroidX Credentials 1.5.0 and Web3j 4.14.0 used by the v3.1 build. It also
+keeps Android Keystore authentication strict while extending the validity
+window enough for real Android 14 instrumentation startup.
 """
 
 from pathlib import Path
@@ -90,6 +92,16 @@ def main() -> int:
         safe = safe.replace(marker, helper + marker, 1)
     safe_path.write_text(safe, encoding="utf-8")
 
+    vault_path = wallet_dir / "WalletVault.java"
+    vault = vault_path.read_text(encoding="utf-8")
+    vault = replace_required(
+        vault,
+        "private static final int AUTH_WINDOW_SECONDS = 120;",
+        "private static final int AUTH_WINDOW_SECONDS = 300;",
+        "Android Keystore authentication validity window",
+    )
+    vault_path.write_text(vault, encoding="utf-8")
+
     bridge_path = wallet_dir / "NativeWalletBridge.java"
     bridge = bridge_path.read_text(encoding="utf-8")
     method_start = bridge.find("    public void assetBalance(")
@@ -113,7 +125,7 @@ def main() -> int:
     bridge = bridge[:method_start] + block + bridge[method_end:]
     bridge_path.write_text(bridge, encoding="utf-8")
 
-    print("AndroidX Credentials, Web3j and Java lambda compatibility fixes applied")
+    print("AndroidX Credentials, Web3j, Java lambda and Android Keystore runtime fixes applied")
     return 0
 
 

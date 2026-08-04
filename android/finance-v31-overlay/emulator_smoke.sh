@@ -14,7 +14,6 @@ mkdir -p "$OUT"
 
 log(){ printf '[SMOKE] %s\n' "$*" | tee -a "$OUT/result.log"; }
 fail(){ log "FAIL: $*"; exit 1; }
-adb_bounded(){ timeout --foreground 120s adb "$@"; }
 
 log 'Waiting for Android emulator'
 timeout --foreground 180s adb wait-for-device || fail 'emulator did not become available'
@@ -34,9 +33,14 @@ adb shell input text 1234 || true
 adb shell input keyevent 66 || true
 sleep 3
 
-log 'Running real WalletVault instrumentation tests on Android 14'
+log 'Building Android instrumentation APK from the exact release source tree'
+python3 android/finance-v31-overlay/inject_native_wallet_tests.py "$PROJECT_ROOT" | tee "$OUT/inject-native-tests.txt"
+export JAVA_HOME="${JAVA_HOME_17_X64:-${JAVA_HOME:-}}"
+timeout --foreground 600s gradle -p "$PROJECT_ROOT" assembleDebug assembleDebugAndroidTest --stacktrace --warning-mode all 2>&1 | tee "$OUT/android-test-build.txt"
 test -f "$DEBUG_APK" || fail "debug APK missing: $DEBUG_APK"
 test -f "$TEST_APK" || fail "instrumentation APK missing: $TEST_APK"
+
+log 'Running real WalletVault instrumentation tests on Android 14'
 timeout --foreground 180s adb install -r -t "$DEBUG_APK" | tee "$OUT/install-debug.txt"
 timeout --foreground 180s adb install -r -t "$TEST_APK" | tee "$OUT/install-test.txt"
 
@@ -50,7 +54,6 @@ timeout --foreground 300s adb shell am instrument -w -r \
   -e class ai.sinergy.finance.wallet.WalletVaultInstrumentedTest \
   "$RUNNER" | tee "$OUT/native-wallet-instrumentation.txt"
 grep -Eq '^OK \(3 tests?\)|^OK \([0-9]+ tests?\)' "$OUT/native-wallet-instrumentation.txt" || fail 'native WalletVault instrumentation tests did not pass'
-grep -q 'Tests 3' "$OUT/native-wallet-instrumentation.txt" || true
 log 'PASS native Android Keystore, BIP39 generation, import, persistence and unlock tests'
 
 # Remove the test-signed debug package before installing the separately signed release.

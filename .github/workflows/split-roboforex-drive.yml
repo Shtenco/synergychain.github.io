@@ -15,6 +15,7 @@ permissions:
 env:
   DRIVE_FILE_ID: 1g35Na7_wljdwVXZ2uSEH3gvjLogqe3Ls
   ARCHIVE_NAME: RoboForex_Top_History200001.zip
+  RUN_MARKER: split-2026-08-04-01
 
 jobs:
   split:

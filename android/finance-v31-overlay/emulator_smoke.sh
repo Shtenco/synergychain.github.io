@@ -15,6 +15,25 @@ mkdir -p "$OUT"
 log(){ printf '[SMOKE] %s\n' "$*" | tee -a "$OUT/result.log"; }
 fail(){ log "FAIL: $*"; exit 1; }
 
+unlock_with_pin(){
+  log 'Refreshing Android device-credential authentication token'
+  adb shell input keyevent 26 >/dev/null 2>&1 || true
+  sleep 2
+  adb shell input keyevent 26 >/dev/null 2>&1 || true
+  sleep 2
+  adb shell input keyevent 82 >/dev/null 2>&1 || true
+  adb shell input swipe 540 1900 540 500 250 >/dev/null 2>&1 || true
+  sleep 1
+  adb shell input text 1234 >/dev/null 2>&1 || true
+  adb shell input keyevent 66 >/dev/null 2>&1 || true
+  sleep 3
+  adb shell dumpsys trust > "$OUT/trust-after-unlock.txt" 2>&1 || true
+  adb shell dumpsys window > "$OUT/window-after-unlock.txt" 2>&1 || true
+  if grep -Eqi 'deviceLocked=true|mShowingLockscreen=true|isStatusBarKeyguard=true' "$OUT/trust-after-unlock.txt" "$OUT/window-after-unlock.txt"; then
+    fail 'device remained locked after PIN entry'
+  fi
+}
+
 log 'Waiting for Android emulator'
 timeout --foreground 180s adb wait-for-device || fail 'emulator did not become available'
 for _ in $(seq 1 90); do
@@ -27,11 +46,9 @@ done
 adb shell settings put global window_animation_scale 0 || true
 adb shell settings put global transition_animation_scale 0 || true
 adb shell settings put global animator_duration_scale 0 || true
-adb shell locksettings set-pin 1234 >"$OUT/locksettings.txt" 2>&1 || true
-adb shell input keyevent 82 || true
-adb shell input text 1234 || true
-adb shell input keyevent 66 || true
-sleep 3
+adb shell locksettings clear >"$OUT/locksettings-clear.txt" 2>&1 || true
+adb shell locksettings set-pin 1234 >"$OUT/locksettings.txt" 2>&1 || fail 'could not configure emulator PIN'
+unlock_with_pin
 
 log 'Building Android instrumentation APK from the exact release source tree'
 python3 android/finance-v31-overlay/inject_native_wallet_tests.py "$PROJECT_ROOT" | tee "$OUT/inject-native-tests.txt"
@@ -43,12 +60,7 @@ test -f "$TEST_APK" || fail "instrumentation APK missing: $TEST_APK"
 log 'Running real WalletVault instrumentation tests on Android 14'
 timeout --foreground 180s adb install -r -t "$DEBUG_APK" | tee "$OUT/install-debug.txt"
 timeout --foreground 180s adb install -r -t "$TEST_APK" | tee "$OUT/install-test.txt"
-
-# Refresh the device-authentication validity window before Android Keystore operations.
-adb shell input keyevent 82 || true
-adb shell input text 1234 || true
-adb shell input keyevent 66 || true
-sleep 2
+unlock_with_pin
 
 timeout --foreground 300s adb shell am instrument -w -r \
   -e class ai.sinergy.finance.wallet.WalletVaultInstrumentedTest \

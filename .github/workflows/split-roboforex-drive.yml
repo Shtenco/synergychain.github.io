@@ -1,0 +1,80 @@
+name: Split RoboForex archive from Google Drive
+
+on:
+  push:
+    paths:
+      - '.github/workflows/split-roboforex-drive.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/split-roboforex-drive.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DRIVE_FILE_ID: 1g35Na7_wljdwVXZ2uSEH3gvjLogqe3Ls
+  ARCHIVE_NAME: RoboForex_Top_History200001.zip
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install downloader
+        run: python -m pip install --quiet --disable-pip-version-check gdown
+
+      - name: Download archive from Google Drive
+        run: |
+          set -euo pipefail
+          gdown --id "$DRIVE_FILE_ID" --output "$ARCHIVE_NAME"
+          test "$(stat -c%s "$ARCHIVE_NAME")" -eq 142821769
+
+      - name: Verify and split archive
+        run: |
+          set -euo pipefail
+          unzip -t "$ARCHIVE_NAME"
+          sha256sum "$ARCHIVE_NAME" | tee ARCHIVE_SHA256.txt
+          split --bytes=70000000 --numeric-suffixes=1 --suffix-length=2 "$ARCHIVE_NAME" "${ARCHIVE_NAME}.part"
+          sha256sum "${ARCHIVE_NAME}.part"* | tee PARTS_SHA256.txt
+          printf '%s\n' \
+            'Linux/macOS:' \
+            "cat ${ARCHIVE_NAME}.part01 ${ARCHIVE_NAME}.part02 ${ARCHIVE_NAME}.part03 > ${ARCHIVE_NAME}" \
+            'Windows CMD:' \
+            "copy /b ${ARCHIVE_NAME}.part01+${ARCHIVE_NAME}.part02+${ARCHIVE_NAME}.part03 ${ARCHIVE_NAME}" \
+            > REASSEMBLE.txt
+
+      - name: Upload part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoboForex-part01
+          path: RoboForex_Top_History200001.zip.part01
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoboForex-part02
+          path: RoboForex_Top_History200001.zip.part02
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoboForex-part03
+          path: RoboForex_Top_History200001.zip.part03
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoboForex-checksums
+          path: |
+            ARCHIVE_SHA256.txt
+            PARTS_SHA256.txt
+            REASSEMBLE.txt
+          compression-level: 0
+          retention-days: 1

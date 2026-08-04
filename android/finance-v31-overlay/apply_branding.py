@@ -30,24 +30,16 @@ def patch_gradle(gradle: Path, app_id: str, version_name: str, version_code: int
     gradle.write_text(text, encoding='utf-8')
 
 
-def patch_app_name(strings_file: Path, label: str):
-    ensure_dir(strings_file.parent)
-    if strings_file.exists():
-        text = strings_file.read_text(encoding='utf-8')
-        pattern = r'<string\s+name=["\']app_name["\'][^>]*>.*?</string>'
-        replacement = f'<string name="app_name">{label}</string>'
-        if re.search(pattern, text, flags=re.S):
-            text = re.sub(pattern, replacement, text, count=1, flags=re.S)
-        elif '</resources>' in text:
-            text = text.replace('</resources>', f'    {replacement}\n</resources>', 1)
-        else:
-            raise RuntimeError(f'Invalid Android strings resource: {strings_file}')
-    else:
-        text = f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">{label}</string>\n</resources>\n'''
-    strings_file.write_text(text, encoding='utf-8')
+def remove_existing_app_name(strings_file: Path):
+    if not strings_file.exists():
+        return
+    text = strings_file.read_text(encoding='utf-8')
+    text, count = re.subn(r'\s*<string\s+name=["\']app_name["\'][^>]*>.*?</string>', '', text, count=1, flags=re.S)
+    if count:
+        strings_file.write_text(text, encoding='utf-8')
 
 
-def patch_manifest(manifest: Path):
+def patch_manifest(manifest: Path, label: str):
     tree = ET.parse(manifest)
     root = tree.getroot()
     app = root.find('application')
@@ -81,12 +73,11 @@ def style_parent(theme_ref: str) -> str:
     return '@android:style/Theme.Material.Light.NoActionBar'
 
 
-def write_resources(res: Path, old_theme: str):
+def write_resources(res: Path, label: str, old_theme: str):
     parent = style_parent(old_theme)
-    # app_name deliberately remains in the project's existing strings.xml so that
-    # Android's resource merger never sees duplicate string/app_name declarations.
     write_text(res / 'values' / 'sinergy_branding.xml', f'''<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">{label}</string>
     <color name="sinergy_icon_background">#002C20</color>
     <color name="sinergy_splash_background">#001A13</color>
     <style name="Theme.Sinergy.Starting" parent="{parent}">
@@ -179,24 +170,21 @@ def main():
     gradle = app / 'build.gradle'
     res = src / 'res'
     www = src / 'assets' / 'www'
-    strings_file = res / 'values' / 'strings.xml'
     if not manifest.exists() or not gradle.exists():
         raise RuntimeError(f'Invalid Android app directory: {app}')
 
     patch_gradle(gradle, args.application_id, args.version_name, args.version_code)
-    patch_app_name(strings_file, args.label)
-    old_theme = patch_manifest(manifest)
-    write_resources(res, old_theme)
+    remove_existing_app_name(res / 'values' / 'strings.xml')
+    old_theme = patch_manifest(manifest, args.label)
+    write_resources(res, args.label, old_theme)
     install_assets(args.assets, res, www)
 
     manifest_text = manifest.read_text(encoding='utf-8')
     gradle_text = gradle.read_text(encoding='utf-8')
-    strings_text = strings_file.read_text(encoding='utf-8')
     assert '@mipmap/ic_launcher' in manifest_text
     assert '@style/Theme.Sinergy.Starting' in manifest_text
-    assert f'<string name="app_name">{args.label}</string>' in strings_text
+    assert args.label in (res / 'values' / 'sinergy_branding.xml').read_text(encoding='utf-8')
     assert args.application_id in gradle_text
-    assert 'name="app_name"' not in (res / 'values' / 'sinergy_branding.xml').read_text(encoding='utf-8')
     print(f'BRANDING_OK label={args.label} applicationId={args.application_id} version={args.version_name}')
 
 if __name__ == '__main__':

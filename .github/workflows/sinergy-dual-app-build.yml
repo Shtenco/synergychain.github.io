@@ -8,6 +8,13 @@ on:
       - 'android/finance-v31-overlay/prepare_wallet_variant.py'
       - '.github/workflows/sinergy-dual-app-build.yml'
       - 'android/finance-v31-overlay/dual-build-trigger.txt'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android/finance-v31-overlay/apply_branding.py'
+      - 'android/finance-v31-overlay/prepare_wallet_variant.py'
+      - '.github/workflows/sinergy-dual-app-build.yml'
+      - 'android/finance-v31-overlay/dual-build-trigger.txt'
   workflow_dispatch:
 
 permissions:

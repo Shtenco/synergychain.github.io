@@ -25,6 +25,7 @@ jobs:
         shell: bash
         run: |
           cat ops/midas-v242-bybit-top30/trainer.py.gz.b64.part* | base64 -d | gzip -d > MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
+          sed -i 's/HTTP(testnet=False,timeout=30,recv_window=10000)/HTTP(testnet=False,domain="bybit",tld="kz",timeout=30,recv_window=10000)/' MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
           python -m py_compile MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
           sha256sum MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
 

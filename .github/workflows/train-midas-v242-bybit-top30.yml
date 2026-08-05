@@ -1,0 +1,65 @@
+name: Train MIDAS V242 Bybit TOP30
+
+on:
+  pull_request:
+    paths:
+      - 'ops/midas-v242-bybit-top30/**'
+      - '.github/workflows/train-midas-v242-bybit-top30.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct and validate trainer
+        shell: bash
+        run: |
+          cat ops/midas-v242-bybit-top30/trainer.py.gz.b64.part* | base64 -d | gzip -d > MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
+          sed -i 's/HTTP(testnet=False,timeout=30,recv_window=10000)/HTTP(testnet=False,domain="bybit",tld="kz",timeout=30,recv_window=10000)/' MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
+          python -m py_compile MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
+          sha256sum MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pandas pyarrow scikit-learn catboost==1.2.8 pybit==5.16.0
+
+      - name: Train TOP30
+        shell: bash
+        run: |
+          set -o pipefail
+          python MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_TRAIN_AND_EXPORT.py \
+            --out-dir MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_2026-08-05 \
+            --cache-dir bybit_cache \
+            2>&1 | tee training.log
+
+      - name: Collect diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p diagnostics
+          cp training.log diagnostics/ 2>/dev/null || true
+          cp -r MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_2026-08-05/reports diagnostics/reports 2>/dev/null || true
+          cp MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_2026-08-05/TOP30_BYBIT_LINEAR_PERPETUALS.csv diagnostics/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30
+          path: |
+            MIDAS_SINERGY_ZOYA_V242_BYBIT_TOP30_2026-08-05.zip
+            training.log
+            diagnostics
+          compression-level: 0
+          retention-days: 2

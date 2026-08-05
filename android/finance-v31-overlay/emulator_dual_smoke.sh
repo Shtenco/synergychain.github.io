@@ -43,3 +43,5 @@ launch_one ai.sinergy.finance finance
 launch_one ai.sinergy.wallet wallet
 
 printf 'PASS Android 14: SINERGY_FINANCE and SINERGY_WALLET install together and launch successfully\n' | tee "$OUT_DIR/result.txt"
+
+# CI retry trigger: dependency-free PNG identify helper is installed by add_synergy_currencies.py.

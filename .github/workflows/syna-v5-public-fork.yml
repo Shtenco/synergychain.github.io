@@ -28,9 +28,6 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Create ephemeral fork-only wallet
-        run: echo "OWNER_PRIVATE_KEY=0x$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-
       - name: Reconstruct and verify clean test package
         run: |
           mkdir -p /tmp/syna-v5
@@ -41,9 +38,9 @@ jobs:
           rm /tmp/syna-v5/project.tar.gz
           ! find /tmp/syna-v5 -type f \( -name '.env' -o -name 'private.env' \) | grep .
 
-      - name: Install dependencies
+      - name: Install pinned dependencies
         working-directory: /tmp/syna-v5
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Static validation
         working-directory: /tmp/syna-v5

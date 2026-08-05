@@ -1,0 +1,33 @@
+name: Probe Bybit Official Runners
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/probe-bybit-official-runners.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Probe official endpoints
+        shell: bash
+        run: |
+          set +e
+          echo "runner=${{ matrix.os }}"
+          for url in \
+            'https://api.bybit.com/v5/market/tickers?category=linear' \
+            'https://api.bybit.kz/v5/market/tickers?category=linear' \
+            'https://api.bytick.com/v5/market/tickers?category=linear'; do
+            echo "URL=$url"
+            curl -sS -L --max-time 20 -o response.txt -w 'HTTP=%{http_code} SIZE=%{size_download}\n' "$url"
+            head -c 180 response.txt || true
+            echo
+          done

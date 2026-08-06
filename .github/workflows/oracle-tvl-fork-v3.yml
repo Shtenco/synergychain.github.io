@@ -1,0 +1,59 @@
+name: Oracle TVL Polygon Fork V3
+
+on:
+  push:
+    branches:
+      - audit/oracle-tvl-fork-v3-20260806
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fork-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Restore package
+        run: |
+          mkdir -p /tmp/oracle-tvl
+          base64 -d fork-tests/oracle-tvl-v3/project.tar.gz.b64 > /tmp/oracle-tvl/project.tar.gz
+          cd /tmp/oracle-tvl
+          tar -xzf project.tar.gz
+          mv fork_ci_payload project
+      - name: Local EVM tests
+        run: |
+          cd /tmp/oracle-tvl/project
+          forge test --match-path 'test/OracleTVL.local.t.sol' -vvv 2>&1 | tee local_evm.log
+      - name: Polygon fork test
+        run: |
+          cd /tmp/oracle-tvl/project
+          set +e
+          success=0
+          for rpc in 'https://polygon-rpc.com' 'https://polygon-bor-rpc.publicnode.com' 'https://rpc.ankr.com/polygon' 'https://polygon.drpc.org'; do
+            echo "=== TRY RPC: $rpc ===" | tee -a polygon_fork.log
+            POLYGON_RPC_URL="$rpc" forge test --match-path 'test/OracleTVL.polygonFork.t.sol' -vvvv 2>&1 | tee -a polygon_fork.log
+            code=${PIPESTATUS[0]}
+            if [ "$code" -eq 0 ]; then
+              success=1
+              echo "FORK_RPC_USED=$rpc" | tee fork_summary.txt
+              break
+            fi
+          done
+          if [ "$success" -ne 1 ]; then
+            echo 'All public Polygon RPC endpoints failed' | tee fork_summary.txt
+            exit 1
+          fi
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-tvl-fork-v3-logs
+          path: |
+            /tmp/oracle-tvl/project/local_evm.log
+            /tmp/oracle-tvl/project/polygon_fork.log
+            /tmp/oracle-tvl/project/fork_summary.txt

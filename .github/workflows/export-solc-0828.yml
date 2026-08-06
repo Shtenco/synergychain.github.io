@@ -1,0 +1,27 @@
+name: Export solc 0.8.28
+
+on:
+  push:
+    branches:
+      - audit/hybrid-max-tvl-v1-20260806
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download official static compiler
+        run: |
+          curl -L --fail --retry 3 -o solc-0.8.28 https://github.com/argotorg/solidity/releases/download/v0.8.28/solc-static-linux
+          chmod +x solc-0.8.28
+          ./solc-0.8.28 --version
+          sha256sum solc-0.8.28 > solc-0.8.28.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solc-0.8.28-linux
+          path: |
+            solc-0.8.28
+            solc-0.8.28.sha256

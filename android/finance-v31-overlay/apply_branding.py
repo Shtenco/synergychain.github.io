@@ -5,6 +5,8 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from finance_investment_overlay import apply_investment_overlay
+
 ANDROID_NS = 'http://schemas.android.com/apk/res/android'
 ET.register_namespace('android', ANDROID_NS)
 A = '{%s}' % ANDROID_NS
@@ -178,6 +180,7 @@ def main():
     old_theme = patch_manifest(manifest, args.label)
     write_resources(res, args.label, old_theme)
     install_assets(args.assets, res, www)
+    apply_investment_overlay(www)
 
     manifest_text = manifest.read_text(encoding='utf-8')
     gradle_text = gradle.read_text(encoding='utf-8')
@@ -185,7 +188,8 @@ def main():
     assert '@style/Theme.Sinergy.Starting' in manifest_text
     assert args.label in (res / 'values' / 'sinergy_branding.xml').read_text(encoding='utf-8')
     assert args.application_id in gradle_text
-    print(f'BRANDING_OK label={args.label} applicationId={args.application_id} version={args.version_name}')
+    assert (www / 'js/investments-v4.js').exists()
+    print(f'BRANDING_OK label={args.label} applicationId={args.application_id} version={args.version_name} investments=v4')
 
 if __name__ == '__main__':
     main()

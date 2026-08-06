@@ -69,7 +69,7 @@ def patch_manifest(manifest: Path, label: str):
 
 def style_parent(theme_ref: str) -> str:
     if theme_ref.startswith('@style/'):
-        return theme_ref[len('@style/'):]
+        return theme_ref[len('@style/') :]
     if theme_ref.startswith('@android:style/'):
         return theme_ref
     return '@android:style/Theme.Material.Light.NoActionBar'
@@ -189,7 +189,8 @@ def main():
     assert args.label in (res / 'values' / 'sinergy_branding.xml').read_text(encoding='utf-8')
     assert args.application_id in gradle_text
     assert (www / 'js/investments-v4.js').exists()
-    print(f'BRANDING_OK label={args.label} applicationId={args.application_id} version={args.version_name} investments=v4')
+    print(f'BRANDING_OK label={args.label} applicationId={args.application_id} version={args.version_name} investments=v4 build=final')
+
 
 if __name__ == '__main__':
     main()

@@ -1,0 +1,159 @@
+name: Repack and Smoke Test SINERGY Finance v3.1
+
+on:
+  push:
+    branches: [build/sinergy-finance-v31-wallet-multicurrency]
+    paths:
+      - 'android/finance-v31-overlay/add_synergy_currencies.py'
+      - 'android/finance-v31-overlay/web_smoke_harness.py'
+      - 'android/finance-v31-overlay/emulator_smoke.sh'
+      - '.github/workflows/sinergy-finance-v31-repack-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_ARTIFACT: SINERGY-FINANCE-v3.1-WALLET-MULTICURRENCY
+  FINAL_APK: SINERGY-FINANCE-v3.1.0-WALLET-MULTICURRENCY-SYNA.apk
+
+jobs:
+  repack-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator' 'system-images;android-34;google_apis;x86_64'
+
+      - name: Download latest successful v3.1 APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/source-artifact /tmp/release android/repack-diagnostics android/emulator-smoke
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${SOURCE_ARTIFACT}&per_page=100"
+          URL="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' "$API" | jq -r '.artifacts | map(select(.expired == false)) | sort_by(.created_at) | last | .archive_download_url')"
+          test -n "$URL" && test "$URL" != null
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' "$URL" -o /tmp/source-artifact.zip
+          unzip -q /tmp/source-artifact.zip -d /tmp/source-artifact
+          ORIGINAL="$(find /tmp/source-artifact -type f -name 'SINERGY-FINANCE-v3.1.0-WALLET-MULTICURRENCY.apk' | head -1)"
+          test -f "$ORIGINAL"
+          cp "$ORIGINAL" /tmp/original.apk
+          sha256sum /tmp/original.apk | tee android/repack-diagnostics/original-sha256.txt
+
+      - name: Binary repack with SYNA and SYNR account currencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/apk-tree && mkdir -p /tmp/apk-tree
+          unzip -q /tmp/original.apk 'assets/www/index.html' 'assets/www/js/app.js' 'assets/www/js/wallet.js' 'assets/www/css/app.css' -d /tmp/apk-tree
+          python3 android/finance-v31-overlay/add_synergy_currencies.py /tmp/apk-tree
+          grep -q "SYNA:'Synergy Capital'" /tmp/apk-tree/assets/www/js/app.js
+          grep -q 'value="SYNA"' /tmp/apk-tree/assets/www/index.html
+          grep -q 'value="SYNR"' /tmp/apk-tree/assets/www/index.html
+
+          cp /tmp/original.apk /tmp/repacked-unsigned.apk
+          zip -qd /tmp/repacked-unsigned.apk 'META-INF/*' || true
+          (cd /tmp/apk-tree && zip -q -u /tmp/repacked-unsigned.apk assets/www/index.html assets/www/js/app.js)
+          unzip -p /tmp/repacked-unsigned.apk assets/www/js/app.js | grep -q "SYNA:'Synergy Capital'"
+          unzip -p /tmp/repacked-unsigned.apk assets/www/index.html | grep -q 'value="SYNA"'
+
+      - name: Browser smoke test of real APK web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/www-smoke && mkdir -p /tmp/www-smoke
+          unzip -q /tmp/repacked-unsigned.apk 'assets/www/*' -d /tmp/www-smoke-root
+          mv /tmp/www-smoke-root/assets/www/* /tmp/www-smoke/
+          python3 android/finance-v31-overlay/web_smoke_harness.py /tmp/www-smoke
+          python3 -m http.server 8765 --directory /tmp/www-smoke >android/repack-diagnostics/http-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          sleep 2
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -x "$CHROME"
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=20000 --dump-dom http://127.0.0.1:8765/index.html > android/repack-diagnostics/browser-smoke-dom.html
+          grep -q 'SINERGY_SMOKE_PASS' android/repack-diagnostics/browser-smoke-dom.html
+          grep -q 'data-sinergy-smoke="PASS"' android/repack-diagnostics/browser-smoke-dom.html
+          grep -q '"SYNA"' android/repack-diagnostics/browser-smoke-dom.html
+          printf 'PASS: BTC ETH SYNA USDT accounts, localStorage reload, analytics ranges, wallet BIP39 UI\n' | tee android/repack-diagnostics/browser-smoke.txt
+
+      - name: Align and sign repacked APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -keystore /tmp/sinergy-v31-smoke.jks \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias sinergy-v31-smoke \
+            -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=SINERGY Finance v3.1 Smoke Passed,O=SINERGY,C=KZ'
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 /tmp/repacked-unsigned.apk /tmp/release/app-aligned.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
+            --ks /tmp/sinergy-v31-smoke.jks --ks-key-alias sinergy-v31-smoke \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "/tmp/release/${FINAL_APK}" /tmp/release/app-aligned.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "/tmp/release/${FINAL_APK}" | tee /tmp/release/SIGNATURE-REPORT.txt
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 "/tmp/release/${FINAL_APK}" | tee /tmp/release/ZIPALIGN-REPORT.txt
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "/tmp/release/${FINAL_APK}" | tee /tmp/release/APK-BADGING.txt
+          grep -q "package: name='ai.sinergy.finance.wallet'" /tmp/release/APK-BADGING.txt
+          unzip -t "/tmp/release/${FINAL_APK}" | tee /tmp/release/ZIP-INTEGRITY.txt
+          sha256sum "/tmp/release/${FINAL_APK}" | tee /tmp/release/SHA256SUMS.txt
+
+      - name: Install and run native wallet smoke tests on Android 14 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash android/finance-v31-overlay/emulator_smoke.sh "/tmp/release/${FINAL_APK}" android/emulator-smoke
+
+      - name: Copy smoke reports into release
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/release/smoke-reports
+          cp -a android/repack-diagnostics/. /tmp/release/smoke-reports/ 2>/dev/null || true
+          cp -a android/emulator-smoke/. /tmp/release/smoke-reports/ 2>/dev/null || true
+
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-v3.1-SMOKE-DIAGNOSTICS
+          path: |
+            android/repack-diagnostics
+            android/emulator-smoke
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload smoke-passed APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-v3.1-WALLET-MULTICURRENCY-SMOKE-PASSED
+          path: /tmp/release
+          if-no-files-found: error
+          retention-days: 30

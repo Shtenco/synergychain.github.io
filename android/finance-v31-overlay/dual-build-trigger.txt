@@ -1,0 +1,4 @@
+SINERGY dual Android 14 build
+Triggered: 2026-08-04T18:35:00Z
+Products: SINERGY_FINANCE and SINERGY_WALLET
+Branding: launcher, round adaptive icon and Android 12-14 splash use the exact user logo.

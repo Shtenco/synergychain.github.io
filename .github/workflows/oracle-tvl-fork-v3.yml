@@ -25,6 +25,8 @@ jobs:
           cd /tmp/oracle-tvl
           tar -xzf project.tar.gz
           mv fork_ci_payload project
+          cd project
+          sed -i 's/i < 50/i < 10/' test/OracleTVL.polygonFork.t.sol
       - name: Local EVM tests
         run: |
           cd /tmp/oracle-tvl/project

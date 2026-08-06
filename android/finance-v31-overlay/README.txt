@@ -1,0 +1,1 @@
+SINERGY Finance v3.1 Wallet + Multicurrency overlay. Exact payload is split into part*.b64 and reconstructed by GitHub Actions. SHA-256: 4558076418b5cd216c806b7227b2efab74da7471e0a4b861c1b3cc6dbfbdc43a

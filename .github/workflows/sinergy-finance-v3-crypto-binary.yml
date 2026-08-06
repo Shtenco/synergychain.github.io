@@ -1,0 +1,196 @@
+name: Build SINERGY Finance v3 Crypto Binary
+
+on:
+  push:
+    branches: [build/sinergy-finance-v3-crypto-binary]
+    paths:
+      - '.github/workflows/sinergy-finance-v3-crypto-binary.yml'
+      - 'android/finance-crypto-patch/**'
+      - 'android/finance-bundle/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APK_NAME: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET.apk
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
+
+      - name: Set up Gradle 8.2.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Restore verified SINERGY Finance v2.1 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf android/app/src android/app/build android/build-diagnostics android/release
+          mkdir -p android/build-diagnostics android/release
+          exec > >(tee android/build-diagnostics/restore.log) 2>&1
+
+          cat android/finance-bundle/sf.tar.xz.b64.part* | base64 -d > /tmp/v1.tar.xz
+          tar -xJf /tmp/v1.tar.xz -C android/app
+
+          cat android/finance-bundle/v2.patch.xz.b64.part* | base64 -d > /tmp/v2.patch.xz
+          xz -dc /tmp/v2.patch.xz > /tmp/v2.patch
+          (cd android/app && patch --batch -p1 < /tmp/v2.patch)
+          rm -rf android/app/src/main
+          mv android/app/src/finance android/app/src/main
+          cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable/ic_launcher_foreground_round.xml
+
+          V21_PARTS=(
+            android/finance-bundle/v21safe.part00
+            android/finance-bundle/v21safe.part01
+            android/finance-bundle/v21safe.part02
+            android/finance-bundle/v21safe.part03
+            android/finance-bundle/v21safe.part04
+            android/finance-bundle/v21safe.part05
+            android/finance-bundle/v21safe.part06a
+            android/finance-bundle/v21safe.part06b
+            android/finance-bundle/v21safe.part06c
+            android/finance-bundle/v21safe.part06d
+            android/finance-bundle/v21safe.part07
+            android/finance-bundle/v21safe.part08
+            android/finance-bundle/v21safe.part09
+            android/finance-bundle/v21safe.part10
+          )
+          cat "${V21_PARTS[@]}" > /tmp/v21.patch.xz.b64
+          echo '6f4eeaa4f192d81f5bdd72e5a284f140a829fafdd16d73b38162c780dcd63277  /tmp/v21.patch.xz.b64' | sha256sum -c -
+          base64 -d /tmp/v21.patch.xz.b64 > /tmp/v21.patch.xz
+          echo 'f85157a5f31c06a9c464e3914cfe0052e31e7254209af712b33cab05c823f5bf  /tmp/v21.patch.xz' | sha256sum -c -
+          xz -dc /tmp/v21.patch.xz > /tmp/v21.patch
+          (cd android/app && patch --batch -p1 < /tmp/v21.patch)
+
+      - name: Apply SINERGY Finance v2.2 and Crypto Layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee android/build-diagnostics/overlay.log) 2>&1
+
+          base64 -d android/finance-crypto-patch/v22-supplement.tar.xz.b64 > /tmp/v22-supplement.tar.xz
+          echo '0e22a9bc73d4dbce71433e7212fa02377e7644fbc15a8f2102e13187d770b5e0  /tmp/v22-supplement.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/v22-supplement.tar.xz -C android
+
+          cat android/finance-crypto-patch/part*.b64 | base64 -d > /tmp/crypto-layer.tar.xz
+          echo 'f5e8eca8bf2ba63ef700c6b2dcc4f5a36d6e00c5ac26503c0439145090a573ba  /tmp/crypto-layer.tar.xz' | sha256sum -c -
+          xz -t /tmp/crypto-layer.tar.xz
+          tar -xJf /tmp/crypto-layer.tar.xz -C android
+
+          test -f android/app/src/main/assets/www/js/v22.js
+          test -f android/app/src/main/assets/www/js/wallet.js
+          test -f android/app/src/main/java/ai/sinergy/finance/wallet/WalletVault.java
+          test -f android/app/src/main/java/ai/sinergy/finance/wallet/SmartAccountClient.java
+          test -f android/app/src/main/java/ai/sinergy/finance/wallet/PasskeyManager.java
+          test -f android/app/src/main/java/ai/sinergy/finance/wallet/SafeTreasuryClient.java
+          grep -q "applicationId 'ai.sinergy.finance.crypto'" android/app/build.gradle
+          grep -q "versionName '3.0.0-crypto-testnet'" android/app/build.gradle
+          grep -q 'SinergyWalletNative' android/app/src/main/java/ai/sinergy/finance/MainActivity.java
+          grep -q 'MAINNET_BLOCKED' android/app/src/main/java/ai/sinergy/finance/wallet/EvmTransactionService.java
+
+          node --check android/app/src/main/assets/www/js/app.js
+          node --check android/app/src/main/assets/www/js/v2.js
+          node --check android/app/src/main/assets/www/js/v21.js
+          node --check android/app/src/main/assets/www/js/v22.js
+          node --check android/app/src/main/assets/www/js/wallet.js
+          (cd android && node tests/run-tests.js) | tee android/build-diagnostics/unit-tests.tap
+
+      - name: Compile release binaries
+        shell: bash
+        run: |
+          set -o pipefail
+          export JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}"
+          gradle -p android clean assembleRelease --stacktrace --warning-mode all 2>&1 | tee android/build-diagnostics/build.log
+
+      - name: Align and sign APK with V1 V2 V3
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNSIGNED='android/app/build/outputs/apk/release/app-release-unsigned.apk'
+          ALIGNED='android/release/app-release-aligned.apk'
+          FINAL="android/release/${APK_NAME}"
+          test -f "$UNSIGNED"
+
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -keystore /tmp/sinergy-crypto-testnet.jks \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias sinergy-crypto-testnet \
+            -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=SINERGY Finance Crypto Testnet,O=SINERGY,C=KZ'
+
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
+            --ks /tmp/sinergy-crypto-testnet.jks \
+            --ks-key-alias sinergy-crypto-testnet \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$FINAL" "$ALIGNED"
+
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee android/build-diagnostics/signature.txt
+          "$ANDROID_HOME/build-tools/34.0.0/zipalign" -c -v 4 "$FINAL" | tee android/build-diagnostics/zipalign.txt
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$FINAL" | tee android/build-diagnostics/badging.txt
+          grep -q "package: name='ai.sinergy.finance.crypto' versionCode='1' versionName='3.0.0-crypto-testnet'" android/build-diagnostics/badging.txt
+          unzip -t "$FINAL" | tee android/build-diagnostics/zip-integrity.txt
+          unzip -l "$FINAL" | grep 'assets/www/js/v22.js'
+          unzip -l "$FINAL" | grep 'assets/www/js/wallet.js'
+          sha256sum "$FINAL" | tee android/release/SHA256SUMS.txt
+          cp android/build-diagnostics/signature.txt android/release/SIGNATURE-REPORT.txt
+          cp android/build-diagnostics/badging.txt android/release/APK-BADGING.txt
+
+      - name: Install APK on Android 14 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r "android/release/${APK_NAME}"
+            adb shell pm path ai.sinergy.finance.crypto
+            adb shell am force-stop ai.sinergy.finance.crypto
+            adb shell monkey -p ai.sinergy.finance.crypto -c android.intent.category.LAUNCHER 1
+            sleep 5
+            adb shell pidof ai.sinergy.finance.crypto
+            adb logcat -d -t 500 '*:E' > android/build-diagnostics/emulator-errors.txt || true
+            if grep -E 'FATAL EXCEPTION|AndroidRuntime.*FATAL|Process: ai\.sinergy\.finance\.crypto' android/build-diagnostics/emulator-errors.txt; then exit 1; fi
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-v3-CRYPTO-build-diagnostics
+          path: android/build-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload signed APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-FINANCE-CRYPTO-v3.0.0-TESTNET
+          path: android/release
+          if-no-files-found: error
+          retention-days: 30

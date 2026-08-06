@@ -1,0 +1,3 @@
+Target branch marker
+Rebuild requested 2026-08-04T09:45:00Z
+Reason: run full branch checkout with android/tests/run-tests.js present

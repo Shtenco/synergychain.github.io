@@ -27,7 +27,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
       - name: Install training stack
         run: |
           python -m pip install --upgrade pip
@@ -54,9 +53,9 @@ jobs:
         run: |
           mkdir -p nexus_106m/wllama_pkg
           cd nexus_106m/wllama_pkg
-          npm pack @wllama/wllama@3.6.0
-          tar -xzf wllama-wllama-3.6.0.tgz
-          rm wllama-wllama-3.6.0.tgz
+          npm pack @wllama/wllama@3.5.1
+          tar -xzf wllama-wllama-3.5.1.tgz
+          rm wllama-wllama-3.5.1.tgz
       - name: Finalize manifest and package
         run: |
           python - <<'PY'
@@ -68,7 +67,7 @@ jobs:
           m['quantizedSHA256']=hashlib.sha256(p.read_bytes()).hexdigest()
           m['floatCheckpointBytes']=f.stat().st_size
           m['floatCheckpointSHA256']=hashlib.sha256(f.read_bytes()).hexdigest()
-          m['mobileRuntime']='@wllama/wllama 3.6.0 / llama.cpp WASM+WebGPU'
+          m['mobileRuntime']='@wllama/wllama 3.5.1 / llama.cpp WASM+WebGPU'
           pathlib.Path('nexus_106m/training_manifest_106m.json').write_text(json.dumps(m,ensure_ascii=False,indent=2))
           PY
           tar -I 'zstd -8 -T0' -cf NEXUS-106M-MOBILE-FULL.tar.zst nexus_106m/output_hf nexus_106m/NEXUS-106M-Q4_K_M.gguf nexus_106m/training_manifest_106m.json nexus_106m/TRAINING_LOG.txt nexus_106m/GENERATION_SMOKE.txt nexus_106m/SHA256SUMS.txt nexus_106m/domains.tsv nexus_106m/train_nexus_106m.py nexus_106m/wllama_pkg/package

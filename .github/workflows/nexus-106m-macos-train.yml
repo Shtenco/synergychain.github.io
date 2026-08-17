@@ -1,0 +1,50 @@
+name: NEXUS 106M macOS Full-Parameter Train
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'nexus_106m/**'
+      - '.github/workflows/nexus-106m-macos-train.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: nexus-106m-macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TOKENIZERS_PARALLELISM: 'false'
+  HF_HUB_DISABLE_TELEMETRY: '1'
+  NEXUS_STEPS: '20'
+  NEXUS_SEQ: '96'
+  NEXUS_LAYERS: '22'
+
+jobs:
+  train-macos:
+    runs-on: macos-14
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install training stack
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'torch==2.7.1' 'transformers==4.53.3' 'safetensors>=0.5' 'sentencepiece>=0.2' 'huggingface_hub>=0.33'
+      - name: Train every parameter of NEXUS ~106M
+        run: |
+          set -o pipefail
+          /usr/bin/time -l python nexus_106m/train_nexus_106m.py 2>&1 | tee nexus_106m/TRAINING_LOG.txt
+      - name: Package raw standalone checkpoint
+        run: |
+          zip -qry NEXUS-106M-MACOS-HF.zip nexus_106m/output_hf nexus_106m/training_manifest_106m.json nexus_106m/TRAINING_LOG.txt nexus_106m/domains.tsv nexus_106m/train_nexus_106m.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-106M-MACOS-HF
+          path: NEXUS-106M-MACOS-HF.zip
+          compression-level: 0
+          retention-days: 30

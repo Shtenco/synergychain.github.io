@@ -8,6 +8,10 @@ on:
       - '.github/workflows/nexus-106m-public-train.yml'
   workflow_dispatch:
 
+concurrency:
+  group: nexus-106m-linux-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

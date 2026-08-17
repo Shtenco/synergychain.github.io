@@ -1,6 +1,11 @@
 name: NEXUS 106M Public Full-Parameter Train
 
 on:
+  push:
+    branches: [nexus-106m-train]
+    paths:
+      - 'nexus_106m/**'
+      - '.github/workflows/nexus-106m-public-train.yml'
   pull_request:
     branches: [main]
     paths:

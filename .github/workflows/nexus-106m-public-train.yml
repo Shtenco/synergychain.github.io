@@ -1,0 +1,80 @@
+name: NEXUS 106M Public Full-Parameter Train
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'nexus_106m/**'
+      - '.github/workflows/nexus-106m-public-train.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TOKENIZERS_PARALLELISM: 'false'
+  HF_HUB_DISABLE_TELEMETRY: '1'
+  NEXUS_STEPS: '40'
+  NEXUS_SEQ: '96'
+  NEXUS_LAYERS: '22'
+
+jobs:
+  train:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install training stack
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'torch==2.7.1' 'transformers==4.53.3' 'safetensors>=0.5' 'sentencepiece>=0.2' 'huggingface_hub>=0.33'
+      - name: Train every parameter of NEXUS ~106M
+        run: |
+          set -o pipefail
+          /usr/bin/time -v python nexus_106m/train_nexus_106m.py 2>&1 | tee nexus_106m/TRAINING_LOG.txt
+      - name: Build llama.cpp tools
+        run: |
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+          pip install -r /tmp/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/llama.cpp/build --target llama-quantize llama-cli -j2
+      - name: Convert and quantize GGUF
+        run: |
+          python /tmp/llama.cpp/convert_hf_to_gguf.py nexus_106m/output_hf --outfile nexus_106m/NEXUS-106M-F16.gguf --outtype f16
+          /tmp/llama.cpp/build/bin/llama-quantize nexus_106m/NEXUS-106M-F16.gguf nexus_106m/NEXUS-106M-Q4_K_M.gguf Q4_K_M
+          sha256sum nexus_106m/NEXUS-106M-Q4_K_M.gguf nexus_106m/output_hf/model.safetensors > nexus_106m/SHA256SUMS.txt
+      - name: Local GGUF generation smoke
+        run: |
+          /tmp/llama.cpp/build/bin/llama-cli -m nexus_106m/NEXUS-106M-Q4_K_M.gguf -p 'Пользователь: У меня есть резерв и дорогой кредит. Что важнее?\nNEXUS:' -n 64 --temp 0.2 --no-display-prompt 2>&1 | tee nexus_106m/GENERATION_SMOKE.txt
+      - name: Fetch mobile browser runtime
+        run: |
+          mkdir -p nexus_106m/wllama_pkg
+          cd nexus_106m/wllama_pkg
+          npm pack @wllama/wllama@3.6.0
+          tar -xzf wllama-wllama-3.6.0.tgz
+          rm wllama-wllama-3.6.0.tgz
+      - name: Finalize manifest and package
+        run: |
+          python - <<'PY'
+          import json, pathlib, hashlib
+          p=pathlib.Path('nexus_106m/NEXUS-106M-Q4_K_M.gguf')
+          f=pathlib.Path('nexus_106m/output_hf/model.safetensors')
+          m=json.loads(pathlib.Path('nexus_106m/training_manifest_106m.json').read_text())
+          m['quantizedBytes']=p.stat().st_size
+          m['quantizedSHA256']=hashlib.sha256(p.read_bytes()).hexdigest()
+          m['floatCheckpointBytes']=f.stat().st_size
+          m['floatCheckpointSHA256']=hashlib.sha256(f.read_bytes()).hexdigest()
+          m['mobileRuntime']='@wllama/wllama 3.6.0 / llama.cpp WASM+WebGPU'
+          pathlib.Path('nexus_106m/training_manifest_106m.json').write_text(json.dumps(m,ensure_ascii=False,indent=2))
+          PY
+          tar -I 'zstd -8 -T0' -cf NEXUS-106M-MOBILE-FULL.tar.zst nexus_106m/output_hf nexus_106m/NEXUS-106M-Q4_K_M.gguf nexus_106m/training_manifest_106m.json nexus_106m/TRAINING_LOG.txt nexus_106m/GENERATION_SMOKE.txt nexus_106m/SHA256SUMS.txt nexus_106m/domains.tsv nexus_106m/train_nexus_106m.py nexus_106m/wllama_pkg/package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-106M-MOBILE-FULL
+          path: NEXUS-106M-MOBILE-FULL.tar.zst
+          compression-level: 0
+          retention-days: 30

@@ -1,1 +1,1 @@
-NEXUS 106M full-parameter training trigger 2026-08-18 runner-matrix-2
+NEXUS 106M full-parameter training trigger 2026-08-18 fixed-matrix-3

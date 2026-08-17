@@ -1,0 +1,180 @@
+antifraud	Антимошенник	crypto_defi
+app_accounts	Счета и остатки	app_system
+app_fx	Валюты и курсы	app_system
+app_overview	Приложение и навигация	app_system
+app_transactions	Операции	app_system
+app_wallet	Криптокошелёк	crypto_defi
+asset_protection	Защита капитала и инфраструктурный риск	crypto_defi
+behavioral_finance	Поведенческие ошибки инвестора	behavior_risk
+bond_duration	Дюрация и процентный риск облигаций	bonds_adv
+bonds	Корпоративные облигации	bonds_adv
+broker_selection	Брокер и покупка инструментов	ru_cis
+budgeting	Бюджет и расходы	cash_budget
+calculator	Финансовые расчёты	app_system
+capital_strategy	Система построения капитала	business_income
+cashflow	Денежный поток	cash_budget
+cis_finance	Инвестиции в СНГ	ru_cis
+compound_interest	Сложный процент и капитал	invest_math
+consumer_credit	Потребительские кредиты	debt_credit
+credit_cards	Кредитные карты и льготный период	debt_credit
+credit_quality	Кредитное качество и дефолтный риск	bonds_adv
+crypto_investing	Крипто как часть капитала	crypto_defi
+current_rates	Макроэкономические ставки 2026	ru_cis
+debt	Долги и кредиты	debt_credit
+deposits_ru	Вклады в России	cash_budget
+diversification	Диверсификация	invest_math
+dividend_strategy	Дивидендная стратегия	equity_adv
+drawdown_risk	Просадка и риск потери капитала	behavior_risk
+emergency_fund	Финансовый резерв	cash_budget
+family_finance	Семейные финансы	life_goals
+financial_habits	Финансовые привычки и система контроля	cash_budget
+funds_ru	Биржевые фонды	funds_adv
+fx_risk	Валютная диверсификация	ru_cis
+goals	Финансовые цели	life_goals
+gold	Золото	funds_adv
+iis_tax_ru	ИИС и налоги РФ	ru_cis
+income_growth	Рост дохода	business_income
+inflation_real_return	Инфляция и реальная доходность	invest_math
+insurance_risk	Страхование финансовых рисков	life_goals
+kazakhstan_finance	Финансы Казахстана	ru_cis
+liquidity_management	Ликвидность и доступность денег	cash_budget
+money_market	Фонды денежного рынка	funds_adv
+mortgage	Ипотека и жилищный долг	debt_credit
+ofz	ОФЗ	bonds_adv
+portfolio	Портфель и распределение	invest_math
+portfolio_stress	Стресс-тест портфеля	behavior_risk
+rebalancing	Ребалансировка	invest_math
+retirement_planning	Пенсионное и долгосрочное планирование	life_goals
+risk_profile	Риск-профиль	invest_math
+sanctions_infra	Санкционные и инфраструктурные риски	ru_cis
+savings_rate	Норма сбережений	cash_budget
+small_business_finance	Финансы малого бизнеса	business_income
+stocks_ru	Российские акции	equity_adv
+tax_planning	Налоговое планирование личных финансов	life_goals
+valuation_basics	Базовая оценка акций и бизнеса	equity_adv
+app_data_quality	Качество финансовых данных	app_system
+app_import_export	Импорт и экспорт данных	app_system
+app_privacy	Приватность финансовой карты	app_system
+app_backup_restore	Резервная копия и восстановление	app_system
+app_categories	Категории доходов и расходов	app_system
+app_goals	Цели внутри приложения	app_system
+app_investments	Инвестиционный учет приложения	app_system
+app_analytics	Финансовая аналитика приложения	app_system
+expense_optimization	Оптимизация расходов	cash_budget
+irregular_income	Нерегулярный доход	cash_budget
+sinking_funds	Фонды будущих расходов	cash_budget
+zero_based_budget	Бюджет с нулевой базой	cash_budget
+envelope_budget	Конвертный метод бюджета	cash_budget
+cash_buffer	Операционный денежный буфер	cash_budget
+bill_calendar	Календарь обязательных платежей	cash_budget
+subscription_control	Контроль подписок	cash_budget
+debt_avalanche	Лавина долгов	debt_credit
+debt_snowball	Снежный ком долгов	debt_credit
+refinancing	Рефинансирование долгов	debt_credit
+credit_score	Кредитная история и скоринг	debt_credit
+debt_to_income	Долговая нагрузка	debt_credit
+loan_amortization	Амортизация кредита	debt_credit
+early_repayment	Досрочное погашение	debt_credit
+collections_risk	Просрочка и взыскание	debt_credit
+asset_allocation	Стратегическая аллокация активов	invest_math
+expected_return	Ожидаемая доходность	invest_math
+volatility	Волатильность	invest_math
+correlation	Корреляция активов	invest_math
+efficient_frontier	Риск и эффективная граница	invest_math
+sequence_risk	Риск последовательности доходностей	invest_math
+dca	Регулярное усреднение	invest_math
+lump_sum_vs_dca	Единовременный вход и DCA	invest_math
+yield_curve	Кривая доходности	bonds_adv
+coupon_reinvestment	Реинвестирование купонов	bonds_adv
+inflation_linked_bonds	Инфляционно-защищенные облигации	bonds_adv
+floating_rate_bonds	Облигации с плавающим купоном	bonds_adv
+bond_ladder	Лестница облигаций	bonds_adv
+bond_convexity	Выпуклость облигаций	bonds_adv
+sovereign_risk	Суверенный риск	bonds_adv
+bond_tax	Налоги и облигационный доход	bonds_adv
+earnings_quality	Качество прибыли	equity_adv
+free_cash_flow	Свободный денежный поток	equity_adv
+roe_roic	ROE и ROIC	equity_adv
+growth_quality	Качество роста бизнеса	equity_adv
+cyclicals	Циклические компании	equity_adv
+economic_moat	Конкурентное преимущество	equity_adv
+buybacks	Обратный выкуп акций	equity_adv
+corporate_governance	Корпоративное управление	equity_adv
+tracking_error	Ошибка следования фонда	funds_adv
+fund_costs	Полная стоимость фонда	funds_adv
+fund_liquidity	Ликвидность биржевого фонда	funds_adv
+index_methodology	Методология индекса	funds_adv
+active_vs_passive	Активное и пассивное управление	funds_adv
+fund_structure_risk	Структурный риск фонда	funds_adv
+gold_funds	Фонды на золото	funds_adv
+money_market_funds	Фонды денежного рынка	funds_adv
+moex_infrastructure	Инфраструктура Московской биржи	ru_cis
+russian_tax_residency	Налоговое резидентство РФ	ru_cis
+ruble_risk	Рублевый риск	ru_cis
+sanctions_scenarios	Сценарии санкционного риска	ru_cis
+cny_instruments	Инструменты в юанях	ru_cis
+kase_infrastructure	Инфраструктура KASE	ru_cis
+aix_infrastructure	Инфраструктура AIX	ru_cis
+cross_border_cis	Трансграничные инвестиции СНГ	ru_cis
+house_purchase	Капитал на жилье	life_goals
+education_fund	Капитал на образование	life_goals
+car_purchase	Покупка автомобиля	life_goals
+emergency_scenarios	Семейные аварийные сценарии	life_goals
+family_events_finance	Финансы крупных семейных событий	life_goals
+inheritance_planning	Планирование наследства	life_goals
+large_purchase	Финансирование крупной покупки	life_goals
+financial_independence	Финансовая независимость	life_goals
+risk_capacity	Способность нести риск	behavior_risk
+risk_tolerance	Психологическая терпимость к риску	behavior_risk
+loss_aversion	Отвращение к потерям	behavior_risk
+anchoring	Эффект якоря	behavior_risk
+overconfidence	Избыточная уверенность	behavior_risk
+recency_bias	Эффект недавности	behavior_risk
+home_bias	Домашнее смещение	behavior_risk
+decision_journal	Журнал инвестиционных решений	behavior_risk
+stablecoin_risk	Риски стейблкоинов	crypto_defi
+smart_contract_risk	Риск смарт-контракта	crypto_defi
+self_custody	Самостоятельное хранение криптоактивов	crypto_defi
+seed_security	Безопасность seed-фразы	crypto_defi
+defi_liquidity	Ликвидность DeFi	crypto_defi
+dex_slippage	Проскальзывание DEX	crypto_defi
+bridge_risk	Риск кроссчейн-мостов	crypto_defi
+crypto_position_sizing	Размер криптопозиции	crypto_defi
+unit_economics	Юнит-экономика	business_income
+profit_margin	Маржинальность бизнеса	business_income
+working_capital	Оборотный капитал	business_income
+pricing_strategy	Ценообразование	business_income
+revenue_diversification	Диверсификация выручки	business_income
+freelancer_finance	Финансы фрилансера	business_income
+side_hustle	Экономика подработки	business_income
+business_reserve	Резерв малого бизнеса	business_income
+dialog_greeting	Приветствие	conversation
+dialog_thanks	Благодарность	conversation
+dialog_farewell	Завершение разговора	conversation
+dialog_smalltalk	Неформальный контакт	conversation
+dialog_continue	Продолжение мысли	conversation
+dialog_explain_more	Углубление объяснения	conversation
+dialog_rephrase	Переформулировка	conversation
+dialog_simplify	Упрощение	conversation
+dialog_compare	Сравнение вариантов	conversation
+dialog_clarify	Уточнение смысла	conversation
+dialog_challenge	Проверка и сомнение	conversation
+dialog_agreement	Согласие	conversation
+dialog_disagreement	Несогласие	conversation
+dialog_summary	Краткое резюме	conversation
+dialog_example	Пример	conversation
+dialog_what_next	Следующий шаг	conversation
+dialog_why	Причинное объяснение	conversation
+dialog_how	Объяснение способа	conversation
+dialog_recall_context	Контекст разговора	conversation
+dialog_correction	Исправление контекста	conversation
+dialog_uncertainty	Работа с неопределенностью	conversation
+dialog_app_help	Диалог о приложении	conversation
+dialog_short_answer	Краткий ответ	conversation
+dialog_deep_answer	Глубокий ответ	conversation
+dialog_scenario_change	Изменение сценария	conversation
+dialog_number_change	Изменение числа	conversation
+dialog_goal_change	Изменение цели	conversation
+dialog_user_preference	Предпочтение пользователя	conversation
+dialog_emotional_tone	Тон общения	conversation
+dialog_meta_capability	Возможности NEXUS	conversation

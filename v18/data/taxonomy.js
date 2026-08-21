@@ -16,4 +16,10 @@
       x.entityType==='data-research'?'Data & Macro':'Theory & Methods'
     );
   }
+  if(!rows.some(x=>x.id==='archive.v18')) rows.push({
+    id:'archive.v18',name:'Top Architecture V18',domain:'Архив',subdomain:'Current Release',
+    entityType:'current-release',status:'prototype',evidence:'L3',moneyRole:'provenance',
+    summary:'Текущая additive multi-page architecture: shared visual/runtime layer, canonical entity registry, typed graph, passports, Evidence/Repository/Coverage Explorer, Financial OS decomposition and versioned Knowledge Library.',
+    href:'../'
+  });
 })();

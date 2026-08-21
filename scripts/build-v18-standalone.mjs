@@ -37,9 +37,10 @@ function rewriteDirectoryHref(ref){
   return pathname+suffix;
 }
 
-const offlineRouter=`<noscript><style data-v18-offline-noscript>.reveal{opacity:1!important;transform:none!important;filter:none!important}</style></noscript><script data-v18-offline-router>(function(){\nconst remote=/^(?:[a-z][a-z0-9+.-]*:|\\/\\/|#)/i;\nfunction fix(a){const raw=a.getAttribute('href');if(!raw||remote.test(raw)||raw.startsWith('mailto:')||raw.startsWith('tel:')||raw.startsWith('javascript:'))return;const m=raw.match(/^([^?#]*)([?#].*)?$/);if(m&&m[1].endsWith('/'))a.setAttribute('href',m[1]+'index.html'+(m[2]||''));}\nfunction scan(root){if(root.nodeType===1&&root.matches?.('a[href]'))fix(root);root.querySelectorAll?.('a[href]').forEach(fix);}\nfunction revealFailSafe(){document.querySelectorAll('.reveal').forEach(el=>el.classList.add('in'));}\nscan(document);new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(scan))).observe(document.documentElement,{childList:true,subtree:true});\ndocument.documentElement.dataset.v18Offline='standalone';\nrevealFailSafe();queueMicrotask(revealFailSafe);addEventListener('DOMContentLoaded',revealFailSafe,{once:true});addEventListener('pageshow',revealFailSafe);setTimeout(revealFailSafe,250);\n})();<\/script>`;
+const offlineVisibility=`<style data-v18-offline-visibility>html[data-v18-offline="standalone"] .reveal{opacity:1!important;transform:none!important;filter:none!important;visibility:visible!important}</style>`;
+const offlineRouter=`<noscript><style data-v18-offline-noscript>.reveal{opacity:1!important;transform:none!important;filter:none!important;visibility:visible!important}</style></noscript><script data-v18-offline-router>(function(){\nconst remote=/^(?:[a-z][a-z0-9+.-]*:|\\/\\/|#)/i;\nfunction fix(a){const raw=a.getAttribute('href');if(!raw||remote.test(raw)||raw.startsWith('mailto:')||raw.startsWith('tel:')||raw.startsWith('javascript:'))return;const m=raw.match(/^([^?#]*)([?#].*)?$/);if(m&&m[1].endsWith('/'))a.setAttribute('href',m[1]+'index.html'+(m[2]||''));}\nfunction scan(root){if(root.nodeType===1&&root.matches?.('a[href]'))fix(root);root.querySelectorAll?.('a[href]').forEach(fix);}\nfunction revealFailSafe(){document.querySelectorAll('.reveal').forEach(el=>el.classList.add('in'));}\ndocument.documentElement.dataset.v18Offline='standalone';scan(document);new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(scan))).observe(document.documentElement,{childList:true,subtree:true});\nrevealFailSafe();queueMicrotask(revealFailSafe);addEventListener('DOMContentLoaded',revealFailSafe,{once:true});addEventListener('pageshow',revealFailSafe);setTimeout(revealFailSafe,250);\n})();<\/script>`;
 
-const manifest={format:'sinergy-v18-standalone-v3',builtAt:new Date().toISOString(),sourceRoot:path.relative(process.cwd(),sourceRoot),pages:[]};
+const manifest={format:'sinergy-v18-standalone-v4',builtAt:new Date().toISOString(),sourceRoot:path.relative(process.cwd(),sourceRoot),pages:[]};
 
 for(const src of htmlFiles){
   let html=fs.readFileSync(src,'utf8');
@@ -66,6 +67,7 @@ for(const src of htmlFiles){
 
   html=html.replace(/(<a\b[^>]*?\bhref=["'])([^"']+)(["'])/gi,(all,prefix,href,quote)=>prefix+rewriteDirectoryHref(href)+quote);
 
+  if(!html.includes('data-v18-offline-visibility')) html=html.replace(/<\/head>/i,offlineVisibility+'\n</head>');
   if(!html.includes('data-v18-offline-router')) html=html.replace(/<\/body>/i,offlineRouter+'\n</body>');
 
   const localCss=[...html.matchAll(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].map(m=>m[1]).filter(x=>!isRemote(x));
@@ -83,6 +85,6 @@ for(const p of manifest.pages) sums.push(`${p.sha256}  ${p.path}`);
 fs.writeFileSync(path.join(outRoot,'STANDALONE_MANIFEST.json'),JSON.stringify(manifest,null,2));
 fs.writeFileSync(path.join(outRoot,'SHA256SUMS.txt'),sums.join('\n')+'\n');
 fs.writeFileSync(path.join(outRoot,'OPEN_ME.html'),`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=index.html"><title>SINERGY V18 · OPEN ME</title><p><a href="index.html">Открыть SINERGY V18</a></p>`);
-fs.writeFileSync(path.join(outRoot,'README_OFFLINE.txt'),`SINERGY V18 — OFFLINE / STANDALONE BUILD\n\n1. Можно открыть index.html даже отдельно: CSS/JS встроены в страницу.\n2. Для переходов между всеми страницами распакуйте архив полностью и откройте OPEN_ME.html.\n3. Сервер и интернет для CSS/JS не нужны.\n4. Directory-links переписаны на explicit index.html для file://.\n5. Reveal fail-safe раскрывает контент сразу при загрузке; при отключённом JS действует noscript fallback.\n\nPages: ${manifest.pages.length}\n`);
+fs.writeFileSync(path.join(outRoot,'README_OFFLINE.txt'),`SINERGY V18 — OFFLINE / STANDALONE BUILD\n\n1. Можно открыть index.html даже отдельно: CSS/JS встроены в страницу.\n2. Для переходов между всеми страницами распакуйте архив полностью и откройте OPEN_ME.html.\n3. Сервер и интернет для CSS/JS не нужны.\n4. Directory-links переписаны на explicit index.html для file://.\n5. Offline visibility guard держит .reveal видимыми независимо от IntersectionObserver; остальные визуальные эффекты остаются активны. При отключённом JS действует noscript fallback.\n\nPages: ${manifest.pages.length}\n`);
 
-console.log(`V18 STANDALONE BUILD: PASS (${manifest.pages.length} HTML pages, CSS/JS inlined, file:// links normalized, immediate reveal fail-safe enabled)`);
+console.log(`V18 STANDALONE BUILD: PASS (${manifest.pages.length} HTML pages, CSS/JS inlined, file:// links normalized, hard reveal visibility guard enabled)`);

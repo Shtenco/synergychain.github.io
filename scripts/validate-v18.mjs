@@ -9,7 +9,6 @@ const warnings=[];
 const fail=(m)=>errors.push(m);
 const warn=(m)=>warnings.push(m);
 const read=p=>fs.readFileSync(path.join(ROOT,p),'utf8');
-const exists=p=>fs.existsSync(path.join(ROOT,p));
 
 function walk(dir, ext=null){
   const out=[];
@@ -60,7 +59,21 @@ for(const k of knowledge){
   if(!entityIds.has(k.id)) fail(`knowledge registry id missing from entity registry: ${k.id}`);
   if(!Number.isInteger(k.pages)||k.pages<=0) fail(`${k.id}: invalid pages`);
   if(!Array.isArray(k.chapters)||k.chapters.length<5) fail(`${k.id}: insufficient semantic chapters`);
+  for(const key of ['slug','title','source','updated','purpose']) if(!k[key]) fail(`${k.id}: missing knowledge field ${key}`);
 }
+const knowledgeSourceEntities=entities.filter(e=>e.domain==='Знания'&&['guide','reference'].includes(e.entityType));
+for(const e of knowledgeSourceEntities) if(!knowledgeIds.has(e.id)) fail(`${e.id}: guide/reference entity has no knowledge registry row`);
+
+// Coverage is informational now; future waves can raise thresholds without changing schemas.
+const hasEdge=id=>edges.some(x=>x.from===id||x.to===id);
+const hasEvidence=id=>evidence.some(x=>(x.entities||[]).includes(id));
+const hasRepo=id=>repos.some(x=>(x.entities||[]).includes(id));
+const edgeCoverage=entities.filter(e=>hasEdge(e.id)).length;
+const evidenceCoverage=entities.filter(e=>hasEvidence(e.id)).length;
+const repoCoverage=entities.filter(e=>hasRepo(e.id)).length;
+if(edgeCoverage/entities.length<0.35) warn(`graph coverage low: ${edgeCoverage}/${entities.length}`);
+if(evidenceCoverage/entities.length<0.20) warn(`evidence coverage low: ${evidenceCoverage}/${entities.length}`);
+if(repoCoverage/entities.length<0.25) warn(`repository coverage low: ${repoCoverage}/${entities.length}`);
 
 // Validate entity deep links as they resolve from Explorer.
 for(const e of entities){
@@ -106,9 +119,9 @@ for(const file of htmlFiles){
 }
 
 console.log(`V18 entities: ${entities.length}`);
-console.log(`V18 edges: ${edges.length}`);
-console.log(`V18 evidence artifacts: ${evidence.length}`);
-console.log(`V18 repository bindings: ${repos.length}`);
+console.log(`V18 edges: ${edges.length} | entity coverage: ${edgeCoverage}/${entities.length}`);
+console.log(`V18 evidence artifacts: ${evidence.length} | entity coverage: ${evidenceCoverage}/${entities.length}`);
+console.log(`V18 repository bindings: ${repos.length} | entity coverage: ${repoCoverage}/${entities.length}`);
 console.log(`V18 knowledge guides: ${knowledge.length}, source pages: ${knowledge.reduce((a,x)=>a+x.pages,0)}`);
 console.log(`V18 HTML pages checked: ${htmlFiles.length}`);
 for(const w of warnings) console.warn('WARN:',w);

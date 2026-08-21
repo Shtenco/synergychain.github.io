@@ -4,6 +4,29 @@
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const qs=(s,c=document)=>c.querySelector(s), qsa=(s,c=document)=>[...c.querySelectorAll(s)];
 
+  // Layout safety net shared by every V18 page. It protects the optical system,
+  // long entity IDs/formulas/repository names and custom graph controls from
+  // leaking into root horizontal overflow while preserving local scroll areas.
+  const guard=document.createElement('style');
+  guard.id='v18-layout-guard';
+  guard.textContent=`
+    html,body{max-width:100%;overflow-x:clip}
+    .shell,.topbar,.global-nav,.hero,.page-hero,.section,.section-head,.grid,.domain-grid,.entity-grid,.explorer-tools,.architecture-rail,.table-wrap,.hypno-tunnel,.portal-orbit,.page-symbol{min-width:0;max-width:100%}
+    .card,.glass,.domain-card,.entity-card,.repo-card,.flow-node,.relation{min-width:0}
+    h1,h2,h3,h4,p,li,.rule,.tiny,.metric,.tag,.status,code,pre,a{overflow-wrap:anywhere;word-break:normal}
+    .portal-orbit{overflow:clip}
+    .table-wrap{max-width:100%;overflow:auto}
+    .global-nav{min-width:0}
+    @media(max-width:720px){
+      .graph-tools{grid-template-columns:1fr!important}
+      .relation{grid-template-columns:1fr!important}
+      .repo-grid{grid-template-columns:minmax(0,1fr)!important}
+      .repo-card h3{font-size:17px}
+      .kicker{max-width:100%;white-space:normal}
+    }
+  `;
+  document.head.appendChild(guard);
+
   // pointer aura + CSS variables
   if(!reduce){
     addEventListener('pointermove',e=>{

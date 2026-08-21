@@ -7,6 +7,8 @@ on:
       - 'v18/**'
       - 'scripts/validate-v18.mjs'
       - 'scripts/smoke-v18.mjs'
+      - 'scripts/build-v18-standalone.mjs'
+      - 'scripts/smoke-v18-offline.mjs'
       - 'docs/**'
       - '.github/workflows/validate-v18.yml'
   pull_request:
@@ -14,6 +16,8 @@ on:
       - 'v18/**'
       - 'scripts/validate-v18.mjs'
       - 'scripts/smoke-v18.mjs'
+      - 'scripts/build-v18-standalone.mjs'
+      - 'scripts/smoke-v18-offline.mjs'
       - 'docs/**'
       - '.github/workflows/validate-v18.yml'
   workflow_dispatch:
@@ -30,9 +34,11 @@ jobs:
         with:
           node-version: '22'
       - name: JavaScript syntax
-        run: find v18 -name '*.js' -print0 | xargs -0 -n1 node --check
+        run: find v18 scripts -name '*.js' -o -name '*.mjs' | xargs -n1 node --check
       - name: Registry, graph, links and secrets
         run: node scripts/validate-v18.mjs
+      - name: Build standalone HTML bundle
+        run: node scripts/build-v18-standalone.mjs v18 release/V18_STANDALONE
 
   chromium-smoke:
     runs-on: ubuntu-latest
@@ -53,16 +59,36 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/v18/ >/dev/null && exit 0; sleep 1; done
           cat /tmp/v18-http.log
           exit 1
-      - name: Desktop, mobile and reduced-motion smoke
+      - name: HTTP desktop, mobile and reduced-motion smoke
         run: node scripts/smoke-v18.mjs
-      - name: Upload visual smoke screenshots
+      - name: Build OFFLINE/STANDALONE release
+        run: node scripts/build-v18-standalone.mjs v18 release/V18_STANDALONE
+      - name: FILE protocol desktop, mobile and reduced-motion smoke
+        run: node scripts/smoke-v18-offline.mjs
+      - name: Upload HTTP visual smoke screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: v18-visual-smoke
+          name: v18-http-visual-smoke
           path: artifacts/v18-smoke
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload FILE visual smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v18-file-visual-smoke
+          path: artifacts/v18-offline-smoke
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload standalone green site
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-V18-STANDALONE-GREEN-${{ github.sha }}
+          path: release/V18_STANDALONE
+          if-no-files-found: error
+          retention-days: 30
 
   source-package:
     runs-on: ubuntu-latest
@@ -80,13 +106,16 @@ jobs:
           cp -a docs "$ROOT/"
           cp .github/workflows/validate-v18.yml "$ROOT/.github/workflows/validate-v18.yml"
           for f in README.md README-V17.md; do [ -f "$f" ] && cp "$f" "$ROOT/"; done
+          node scripts/build-v18-standalone.mjs v18 "$ROOT/OFFLINE_STANDALONE"
           cat > "$ROOT/BUILD_INFO.txt" <<EOF
           SINERGY V18 GREEN SOURCE PACKAGE
           commit=${GITHUB_SHA}
           branch=${GITHUB_REF_NAME}
           workflow_run=${GITHUB_RUN_ID}
           structural=success
-          chromium_smoke=success
+          http_chromium_smoke=success
+          file_protocol_chromium_smoke=success
+          offline_standalone=included
           EOF
           (
             cd "$ROOT"

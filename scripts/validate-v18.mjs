@@ -24,8 +24,11 @@ function loadData(files){
   for(const f of files) vm.runInContext(read(f),context,{filename:f});
   return context.window;
 }
-const data=loadData(['v18/data/entities.js','v18/data/taxonomy.js','v18/data/edges.js','v18/data/evidence.js','v18/data/repositories.js','v18/data/knowledge.js']);
-const entities=data.SINERGY_ENTITIES||[], edges=data.SINERGY_EDGES||[], evidence=data.SINERGY_EVIDENCE||[], repos=data.SINERGY_REPOSITORIES||[], knowledge=data.SINERGY_KNOWLEDGE||[];
+const data=loadData([
+  'v18/data/entities.js','v18/data/taxonomy.js','v18/data/edges.js','v18/data/evidence.js',
+  'v18/data/repositories.js','v18/data/knowledge.js','v18/data/aliases.js','v18/data/history.js'
+]);
+const entities=data.SINERGY_ENTITIES||[],edges=data.SINERGY_EDGES||[],evidence=data.SINERGY_EVIDENCE||[],repos=data.SINERGY_REPOSITORIES||[],knowledge=data.SINERGY_KNOWLEDGE||[],aliases=data.SINERGY_ALIASES||[],nonAliases=data.SINERGY_NON_ALIASES||[],history=data.SINERGY_HISTORY||[];
 const entityIds=new Set();
 for(const e of entities){
   if(!e.id) fail('entity without id');
@@ -36,11 +39,14 @@ for(const e of entities){
 const allowedDomains=new Set(['Модель','Financial OS','Институты','Продукты','Технологии','Исследования','Знания','Архив']);
 for(const e of entities) if(!allowedDomains.has(e.domain)) fail(`${e.id}: unknown domain ${e.domain}`);
 
-const edgeTypes=new Set(['depends_on','funds','creates_claim','governed_by','settles_into','evidence_for','supersedes','contradicts']);
+const edgeTypes=new Set(['depends_on','funds','creates_claim','governed_by','settles_into','evidence_for','supersedes','contradicts','contains','supports','implements']);
+const edgeKeys=new Set();
 for(const x of edges){
   if(!entityIds.has(x.from)) fail(`edge.from unknown: ${x.from}`);
   if(!entityIds.has(x.to)) fail(`edge.to unknown: ${x.to}`);
   if(!edgeTypes.has(x.type)) fail(`edge type unknown: ${x.type}`);
+  if(x.from===x.to) fail(`self edge: ${x.from} ${x.type}`);
+  const key=`${x.from}|${x.type}|${x.to}`;if(edgeKeys.has(key)) fail(`duplicate edge: ${key}`);edgeKeys.add(key);
 }
 const evidenceIds=new Set();
 for(const x of evidence){
@@ -64,17 +70,35 @@ for(const k of knowledge){
 const knowledgeSourceEntities=entities.filter(e=>e.domain==='Знания'&&['guide','reference'].includes(e.entityType));
 for(const e of knowledgeSourceEntities) if(!knowledgeIds.has(e.id)) fail(`${e.id}: guide/reference entity has no knowledge registry row`);
 
+const aliasKeys=new Set();
+for(const a of aliases){
+  if(!a.alias||!a.entity||!a.kind) fail('alias row missing alias/entity/kind');
+  if(!entityIds.has(a.entity)) fail(`alias ${a.alias}: unknown entity ${a.entity}`);
+  const key=`${String(a.alias).toLowerCase()}|${a.entity}`;if(aliasKeys.has(key)) fail(`duplicate alias mapping: ${key}`);aliasKeys.add(key);
+}
+for(const x of nonAliases){
+  if(!entityIds.has(x.a)) fail(`non-alias unknown entity: ${x.a}`);
+  if(!entityIds.has(x.b)) fail(`non-alias unknown entity: ${x.b}`);
+  if(x.a===x.b) fail(`non-alias self pair: ${x.a}`);
+}
+for(const h of history){
+  if(!h.version||!h.event||!h.kind||!Array.isArray(h.entities)||!h.entities.length) fail('history row missing required fields');
+  for(const id of h.entities||[]) if(!entityIds.has(id)) fail(`history ${h.version}: unknown entity ${id}`);
+}
+
 const hasEdge=id=>edges.some(x=>x.from===id||x.to===id);
 const hasEvidence=id=>evidence.some(x=>(x.entities||[]).includes(id));
 const hasRepo=id=>repos.some(x=>(x.entities||[]).includes(id));
+const hasHistory=id=>history.some(x=>(x.entities||[]).includes(id));
 const edgeCoverage=entities.filter(e=>hasEdge(e.id)).length;
 const evidenceCoverage=entities.filter(e=>hasEvidence(e.id)).length;
 const repoCoverage=entities.filter(e=>hasRepo(e.id)).length;
-if(edgeCoverage/entities.length<0.35) warn(`graph coverage low: ${edgeCoverage}/${entities.length}`);
+const historyCoverage=entities.filter(e=>hasHistory(e.id)).length;
+if(edgeCoverage/entities.length<0.55) warn(`graph coverage low: ${edgeCoverage}/${entities.length}`);
 if(evidenceCoverage/entities.length<0.20) warn(`evidence coverage low: ${evidenceCoverage}/${entities.length}`);
 if(repoCoverage/entities.length<0.25) warn(`repository coverage low: ${repoCoverage}/${entities.length}`);
+if(historyCoverage/entities.length<0.20) warn(`history coverage low: ${historyCoverage}/${entities.length}`);
 
-// Validate registry deep links as they resolve from Explorer.
 for(const e of entities){
   if(!e.href) continue;
   const resolved=path.normalize(path.join(V18,'explorer',String(e.href).split(/[?#]/)[0]));
@@ -83,7 +107,6 @@ for(const e of entities){
   if(!ok) fail(`${e.id}: broken entity href ${e.href}`);
 }
 
-// Local literal href/src integrity across V18 HTML. Dynamic JS template hrefs are runtime-tested by Chromium, not treated as filesystem literals.
 const htmlFiles=walk(V18,'.html');
 const attrRe=/(?:href|src)=["']([^"']+)["']/g;
 for(const file of htmlFiles){
@@ -119,6 +142,8 @@ console.log(`V18 entities: ${entities.length}`);
 console.log(`V18 edges: ${edges.length} | entity coverage: ${edgeCoverage}/${entities.length}`);
 console.log(`V18 evidence artifacts: ${evidence.length} | entity coverage: ${evidenceCoverage}/${entities.length}`);
 console.log(`V18 repository bindings: ${repos.length} | entity coverage: ${repoCoverage}/${entities.length}`);
+console.log(`V18 aliases: ${aliases.length} | explicit non-alias pairs: ${nonAliases.length}`);
+console.log(`V18 history events: ${history.length} | entity coverage: ${historyCoverage}/${entities.length}`);
 console.log(`V18 knowledge guides: ${knowledge.length}, source pages: ${knowledge.reduce((a,x)=>a+x.pages,0)}`);
 console.log(`V18 HTML pages checked: ${htmlFiles.length}`);
 for(const w of warnings) console.warn('WARN:',w);

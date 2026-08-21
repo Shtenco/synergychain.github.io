@@ -1,268 +1,263 @@
 # SINERGY V18 — Migration Status
 
-Branch: `portal-v18-top`
+Branch: `portal-v18-top`  
 Base: `portal-v17-rebuild`
 
 ## Principle
 
-V18 is being built **beside** V17. Root V17 pages remain unchanged until V18 passes mapping, link, runtime and visual validation.
+V18 is built **beside** V17. Root V17 remains unchanged until V18 passes content mapping, structural validation and browser visual/runtime smoke tests.
 
 Promotion invariant:
 
 ```text
 unmapped_v17_content == 0
 broken_internal_links == 0
+unknown_entity_refs == 0
+duplicate_entity_ids == 0
 critical_runtime_errors == 0
+critical_visual_overflow == 0
 ```
 
-## Wave 01 — completed structure
+## Wave 01 — top architecture completed
 
 ### Shared platform
 
-- `v18/assets/sinergy-v18.css` — one shared visual system.
-- `v18/assets/sinergy-v18.js` — one shared motion/explorer runtime.
+- `v18/assets/sinergy-v18.css` — shared visual system.
+- `v18/assets/sinergy-v18.js` — shared motion, responsive guard and Explorer runtime.
 - `v18/data/entities.js` — canonical entity registry.
-- `v18/index.html` — new domain map / portal home.
+- `v18/index.html` — domain map / portal home.
 
-### Domain pages
+### Nine canonical spaces
 
-- `v18/model/index.html`
-- `v18/institutions/index.html`
-- `v18/products/index.html`
-- `v18/technology/index.html`
-- `v18/research/index.html`
-- `v18/knowledge/index.html`
-- `v18/explorer/index.html`
-- `v18/archive/index.html`
+1. Model.
+2. Financial OS.
+3. Institutions.
+4. Products.
+5. Technology.
+6. Research.
+7. Knowledge.
+8. Explorer.
+9. Archive.
 
-### Financial OS — decomposed
+### Financial OS decomposition
 
-- `v18/financial/index.html`
-- `v18/financial/accounting.html`
-- `v18/financial/money.html`
-- `v18/financial/settlement.html`
-- `v18/financial/bridge.html`
-- `v18/financial/treasury.html`
-- `v18/financial/qe-qt.html`
-- `v18/financial/liquidity.html`
-- `v18/financial/solvency.html`
-- `v18/financial/profit.html`
+Dedicated surfaces exist for:
 
-## Visual system implemented
+- accounting;
+- money;
+- settlement;
+- bridge;
+- treasury;
+- QE/QT;
+- liquidity;
+- solvency;
+- canonical profit.
 
-The V18 runtime intentionally avoids external visual libraries.
+## Wave 02 — knowledge graph / passports completed
 
-Effects include:
+### Universal Entity Passport
+
+`v18/explorer/entity.html?id=<entity-id>` creates a passport for every registered entity without duplicating HTML.
+
+It automatically resolves:
+
+- ID / domain / subdomain / entity type;
+- status and evidence level;
+- system / money role;
+- incoming and outgoing typed graph relations;
+- supporting / contradicting / insufficient evidence artifacts;
+- repository provenance;
+- related entities;
+- manual deep-page route when one exists.
+
+### Typed Dependency Graph
+
+`v18/data/edges.js` + `v18/explorer/graph.html` support:
+
+- `depends_on`;
+- `creates_claim`;
+- `funds`;
+- `governed_by`;
+- `settles_into`;
+- `evidence_for`;
+- `supersedes`;
+- `contradicts`.
+
+Graph Explorer is focus-driven:
+
+`graph.html?focus=<entity-id>`
+
+Any entity can become the center of a 1–2 hop local graph.
+
+### Evidence Registry
+
+`v18/data/evidence.js` records evidence independently from source code presence.
+
+Statuses:
+
+- `supports`;
+- `contradicts`;
+- `insufficient`.
+
+Negative evidence remains first-class data.
+
+### Repository Registry
+
+`v18/data/repositories.js` binds repositories to exact entity IDs instead of maintaining a flat project list.
+
+### Coverage Dashboard
+
+`v18/explorer/coverage.html` calculates graph / evidence / repository / manual-deep-page coverage by domain and automatically builds a gap queue.
+
+## Wave 03 — Knowledge Library and taxonomy completed
+
+### Canonical Token Taxonomy
+
+Token branches keep stable IDs for provenance but are normalized under:
+
+`Research → Tokenomics`
+
+Current research entities include:
+
+- SYNA;
+- SYNR;
+- SYNC legacy branch;
+- USDS;
+- Triple Non-Inflationary Emission research.
+
+`v18/research/tokenomics.html` applies a backing / liability / cashflow / exit accounting gate.
+
+### Knowledge Library
+
+`v18/data/knowledge.js` + `v18/knowledge/library.html` + `v18/knowledge/guide.html?id=...`
+
+Current indexed sources:
+
+- Investments Russia 2026 — 73 pages;
+- Practical Investing & Banks 2026 — 112 pages;
+- TOP-50 Russia 2026 — 61 pages;
+- Deposits Russia 2026 — 78 pages;
+- Internet Income 2026 — 298 pages;
+- 12-Month Anti-Crisis Plan — 138 pages;
+- Sell Unused Assets 2026 — 86 pages.
+
+Total indexed source pages: **846**.
+
+Semantic chapter maps are explicitly an index over source files, not a claim that the generated chapter names reproduce a verbatim original table of contents.
+
+## Deep manual passports already available
+
+High-risk / high-value nodes also have hand-curated deep pages in addition to the universal passport engine, including:
+
+- SettlementRouter;
+- BaseBridgeVault;
+- TimedQEController;
+- PrefundedSettlementVault;
+- AtomicCreditLiquidityManager;
+- NEXUS;
+- DEGOV;
+- MetaPay;
+- MIDAS;
+- SINERGY Finance;
+- Growth OS.
+
+## Visual system
+
+V18 uses one shared visual language without external visual libraries:
 
 - moving optical flow-field canvas;
-- repeating conic / radial moire fields;
+- repeating conic / radial moiré fields;
 - pseudo-3D perspective grid;
-- rotating orbital system map;
+- rotating orbital maps;
 - optical tunnel sections;
 - pointer aura;
-- card-local radial lighting;
-- optional perspective tilt;
+- card-local lighting and optional perspective tilt;
 - kinetic text parallax;
-- intersection-based reveal;
+- intersection reveals;
 - scanline effects;
-- responsive mobile fallbacks.
+- responsive layout guard for long formulas, entity IDs, repository names and graph UI.
 
 Accessibility invariant:
 
-`prefers-reduced-motion: reduce` disables decorative animation and parallax.
+`prefers-reduced-motion: reduce` disables decorative animation/parallax.
 
-## Content migrated / normalized in Wave 01
+## CI / validation
 
-### Political economy
+Workflow: `.github/workflows/validate-v18.yml`
 
-- market discovery vs collective infrastructure;
-- personal ownership;
-- right to exit;
-- collective capital;
-- polycentric governance;
-- subsidiarity;
-- Economic Constitution;
-- ownership / governance / cashflow / execution separation;
-- external inflow vs rotation vs accounting uplift vs realized value.
+### Structural gate
 
-### Financial OS
+Checks:
 
-- four financial planes;
-- consolidated accounting perimeter;
-- gross TVL vs canonical assets vs liability-adjusted NAV;
-- Liability Registry;
-- xETH / SYUSD / USDCx role separation;
-- SettlementRouter;
-- BaseBridgeVault;
-- BridgeAsset / InternalBridgeEndpoint;
-- BaseArbExecutor;
-- PrefundedSettlementVault;
-- settlement tickets / receivables;
-- Treasury capital buckets;
-- QE/QT policy state machine;
-- affordable gradient;
-- backed QE credit;
-- temporary LP QE neutralization;
-- flash vs settlement inventory distinction;
-- AtomicCreditLiquidityManager;
-- Solvency / Stress Engine;
-- Canonical Profit Engine;
-- Source-of-Funds Gate;
-- External Demand / Solver;
-- negative evidence preservation.
+- JS syntax;
+- duplicate / missing entity IDs;
+- canonical domain taxonomy;
+- unknown edge endpoints / edge types;
+- evidence → entity references;
+- repository → entity references;
+- Knowledge registry completeness;
+- registry deep-page targets;
+- literal local `href/src` targets;
+- secret-like assignments;
+- shared CSS/runtime usage.
 
-### Institutions / social finance
+A verified run on the V18 branch has already passed this structural gate with:
 
-- DEGOV;
-- DAO 10+1;
-- SOTA DAO research;
-- NEXUS bounded authority;
-- Blockchain Budget;
-- Mutual Aid Fund;
-- Anti-Pyramid Escrow;
-- P2P Credit Replacement;
-- Debt Clearing / Netting;
-- debt extinguishment requirement.
+- 103 entities;
+- 50 typed edges;
+- graph coverage 45 / 103;
+- 17 evidence artifacts covering 34 / 103 entities;
+- 31 repository bindings covering 44 / 103 entities;
+- 7 knowledge guides / 846 source pages;
+- 38 HTML pages checked.
 
-### Products
+### Chromium visual/runtime gate
 
-- preserved Growth OS linked by original routes;
-- OLGA AGI;
-- Business Autopilot;
-- AI SMM;
-- AI CRM;
-- AI Sales;
-- AI CFO;
-- API Vault;
-- SMM BOT / ADVERT / Affiliate;
-- SINERGY Finance;
-- MetaPay / SINERGY Pay;
-- Super App;
-- MetaBroker;
-- MIDAS;
-- AI Trade Terminal.
+The browser job runs desktop + mobile routes plus reduced-motion mode and checks:
 
-### Technology
+- HTTP success;
+- page/runtime errors;
+- request failures;
+- visible content;
+- shared visual shell;
+- root horizontal overflow;
+- token taxonomy rendering;
+- Knowledge Library totals;
+- representative screenshots.
 
-- SYNERGYCHAIN;
-- SYNERGY AI Blockchain;
-- NEXUS / AGI;
-- AI Coder;
-- AI Language;
-- DeepCompress;
-- post-quantum roadmap;
-- PQ Messenger;
-- TURBO OS;
-- TurboMesh;
-- payment rails.
+First real browser run found layout overflow on several pages. The shared responsive guard has been strengthened and the smoke script now reports exact offending DOM elements for any remaining overflow. This gate must be green before root promotion.
 
-### Research
+## Remaining work after current waves
 
-- evidence L0-L6;
-- Info Graph Theory;
-- graph trading;
-- quantum trading;
-- computer-vision trading;
-- swap/cross-FX arbitrage;
-- Global Liquidity Dataminer;
-- 3D Bars;
-- multithreaded ML trading;
-- tokenomics branches;
-- agro / recycling / energy / metallurgy;
-- cascade ORC;
-- LENR;
-- graphene/photonics;
-- piezo memory;
-- BioNeuro;
-- HyperVRAM / memory architecture.
+### Coverage expansion
 
-### Knowledge / household
+The system now exposes its own gaps. Next migration target is to increase:
 
-- Household Financial OS;
-- personal net-worth equation;
-- financial ladder;
-- investments guide branch;
-- banking/practice branch;
-- TOP-50 reference branch;
-- deposits branch;
-- online-income branch;
-- anti-crisis plan;
-- unused-asset sale guide;
-- SINERGY Finance connection.
+- graph coverage;
+- evidence coverage;
+- repository coverage;
+- manual deep-page coverage for economically/security-critical nodes.
 
-## Remaining Wave 02 work
+### Full-text Knowledge migration
 
-### 1. Entity passports
+846 pages are indexed and semantically decomposed, but the original source text is not yet copied chapter-by-chapter into V18. Next waves should migrate full text while retaining source filenames and version stamps.
 
-Promote high-value registry entities into generated/full pages with fields:
+### Provenance hardening
 
-`id → aliases → domain → entity type → status → evidence → purpose → inputs → outputs → source of funds → liabilities → reserves → governance → dependencies → repositories → evidence → risks → history`.
+Add:
 
-Priority passports:
+- legacy alias registry;
+- per-entity changelog/history;
+- explicit supersession chains;
+- source document bindings beyond GitHub repositories.
 
-- SettlementRouter
-- BaseBridgeVault
-- PrefundedSettlementVault
-- TimedQEController
-- AtomicCreditLiquidityManager
-- Canonical Treasury
-- NEXUS
-- DEGOV
-- MetaPay
-- MetaBroker
-- MIDAS
-- SINERGY Finance
-- Growth OS / OLGA
+### Production promotion
 
-### 2. Typed dependency graph
+Only after green validation and zero unmapped critical V17 content:
 
-Add edges:
-
-- `depends_on`
-- `creates_claim`
-- `funds`
-- `governed_by`
-- `settles_into`
-- `evidence_for`
-- `supersedes`
-- `contradicts`
-
-### 3. Repository binding
-
-Attach GitHub repositories to entities rather than showing a flat list.
-
-### 4. Evidence binding
-
-Attach simulations, reports, tests and negative evidence to exact claims/entities.
-
-### 5. Knowledge decomposition
-
-Split large educational branches into stable chapter URLs instead of cards only.
-
-### 6. Token taxonomy cleanup
-
-Move token branches under `Research / Tokenomics` as a subdomain while preserving token entity type and legacy aliases.
-
-### 7. Automated validation
-
-Add CI checks for:
-
-- missing internal href/src targets;
-- duplicate entity IDs;
-- entity references to unknown dependencies;
-- domain taxonomy violations;
-- missing evidence/status fields;
-- HTML parse/runtime smoke tests;
-- `prefers-reduced-motion` presence;
-- accidental secret patterns.
-
-### 8. Promotion
-
-Only after validation:
-
-- archive the current root entrypoint;
-- promote V18 to root;
+- archive current root entrypoint;
+- promote V18 routing to root;
 - update `404.html`;
 - update root `README.md`;
-- deploy built static artifact rather than repository root;
-- keep V17 URL-accessible.
+- deploy a dedicated built/static artifact instead of unrelated repository root files;
+- keep V17 permanently URL-accessible.

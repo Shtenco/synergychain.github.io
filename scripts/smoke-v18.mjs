@@ -19,22 +19,27 @@ async function runViewport(label,viewport,reducedMotion='no-preference'){
     const res=await page.goto(url,{waitUntil:'networkidle',timeout:30000}).catch(e=>{failures.push(`${label}/${name}: navigation ${e}`);return null});
     if(!res||res.status()>=400) failures.push(`${label}/${name}: HTTP ${res?.status()||'NO_RESPONSE'} ${url}`);
     await page.waitForTimeout(reducedMotion==='reduce'?80:220);
-    const audit=await page.evaluate(()=>({
-      title:document.title,
-      text:(document.body?.innerText||'').trim().length,
-      bodyW:document.body?.scrollWidth||0,
-      viewW:document.documentElement.clientWidth||0,
-      canvas:!!document.querySelector('#motionCanvas'),
-      bg:!!document.querySelector('.v18-bg'),
-      nav:!!document.querySelector('.topbar'),
-      reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,
-      entityCount:window.SINERGY_ENTITIES?.length||0,
-      guideCount:window.SINERGY_KNOWLEDGE?.length||0
-    }));
+    const audit=await page.evaluate(()=>{
+      const viewW=document.documentElement.clientWidth||0;
+      const offenders=[...document.querySelectorAll('body *')].map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName.toLowerCase(),cls:String(el.className||'').slice(0,80),text:(el.textContent||'').trim().replace(/\s+/g,' ').slice(0,90),left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)}}).filter(x=>x.right>viewW+8||x.left<-8).sort((a,b)=>Math.max(b.right-viewW,-b.left)-Math.max(a.right-viewW,-a.left)).slice(0,6);
+      return {
+        title:document.title,
+        text:(document.body?.innerText||'').trim().length,
+        bodyW:document.body?.scrollWidth||0,
+        viewW,
+        canvas:!!document.querySelector('#motionCanvas'),
+        bg:!!document.querySelector('.v18-bg'),
+        nav:!!document.querySelector('.topbar'),
+        reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,
+        entityCount:window.SINERGY_ENTITIES?.length||0,
+        guideCount:window.SINERGY_KNOWLEDGE?.length||0,
+        offenders
+      };
+    });
     if(audit.text<80) failures.push(`${label}/${name}: suspiciously little visible text (${audit.text})`);
     if(!audit.nav) failures.push(`${label}/${name}: missing topbar`);
     if(!audit.bg) failures.push(`${label}/${name}: missing optical background`);
-    if(audit.bodyW>audit.viewW+8) failures.push(`${label}/${name}: horizontal overflow ${audit.bodyW-audit.viewW}px`);
+    if(audit.bodyW>audit.viewW+8) failures.push(`${label}/${name}: horizontal overflow ${audit.bodyW-audit.viewW}px offenders=${JSON.stringify(audit.offenders)}`);
     if(reducedMotion==='reduce'&&!audit.reduced) failures.push(`${label}/${name}: reduced-motion emulation not active`);
     if(name==='entity-token'){
       const body=await page.textContent('body');

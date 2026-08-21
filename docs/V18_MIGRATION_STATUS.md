@@ -41,17 +41,7 @@ critical_visual_overflow == 0
 
 ### Financial OS decomposition
 
-Dedicated surfaces exist for:
-
-- accounting;
-- money;
-- settlement;
-- bridge;
-- treasury;
-- QE/QT;
-- liquidity;
-- solvency;
-- canonical profit.
+Dedicated surfaces exist for accounting, money, settlement, bridge, treasury, QE/QT, liquidity, solvency and canonical profit.
 
 ## Wave 02 — knowledge graph / passports completed
 
@@ -59,16 +49,7 @@ Dedicated surfaces exist for:
 
 `v18/explorer/entity.html?id=<entity-id>` creates a passport for every registered entity without duplicating HTML.
 
-It automatically resolves:
-
-- ID / domain / subdomain / entity type;
-- status and evidence level;
-- system / money role;
-- incoming and outgoing typed graph relations;
-- supporting / contradicting / insufficient evidence artifacts;
-- repository provenance;
-- related entities;
-- manual deep-page route when one exists.
+It automatically resolves identity, domain/subdomain/type, maturity/evidence, money role, incoming/outgoing graph edges, evidence artifacts, repository provenance, related entities and a manual deep route when available.
 
 ### Typed Dependency Graph
 
@@ -89,25 +70,11 @@ Graph Explorer is focus-driven:
 
 Any entity can become the center of a 1–2 hop local graph.
 
-### Evidence Registry
+### Evidence / repository / coverage
 
-`v18/data/evidence.js` records evidence independently from source code presence.
-
-Statuses:
-
-- `supports`;
-- `contradicts`;
-- `insufficient`.
-
-Negative evidence remains first-class data.
-
-### Repository Registry
-
-`v18/data/repositories.js` binds repositories to exact entity IDs instead of maintaining a flat project list.
-
-### Coverage Dashboard
-
-`v18/explorer/coverage.html` calculates graph / evidence / repository / manual-deep-page coverage by domain and automatically builds a gap queue.
+- `v18/data/evidence.js` records `supports / contradicts / insufficient` independently from code presence.
+- `v18/data/repositories.js` binds repositories to exact entity IDs instead of a flat list.
+- `v18/explorer/coverage.html` calculates graph/evidence/repository/manual-deep-page coverage by domain and creates a gap queue.
 
 ## Wave 03 — Knowledge Library and taxonomy completed
 
@@ -117,15 +84,7 @@ Token branches keep stable IDs for provenance but are normalized under:
 
 `Research → Tokenomics`
 
-Current research entities include:
-
-- SYNA;
-- SYNR;
-- SYNC legacy branch;
-- USDS;
-- Triple Non-Inflationary Emission research.
-
-`v18/research/tokenomics.html` applies a backing / liability / cashflow / exit accounting gate.
+`v18/research/tokenomics.html` applies a backing / liability / cashflow / exit accounting gate to SYNA, SYNR, SYNC, USDS and Triple Non-Inflationary Emission research.
 
 ### Knowledge Library
 
@@ -143,23 +102,11 @@ Current indexed sources:
 
 Total indexed source pages: **846**.
 
-Semantic chapter maps are explicitly an index over source files, not a claim that the generated chapter names reproduce a verbatim original table of contents.
+Semantic chapter maps are explicitly an index over source files, not a claim that generated chapter names reproduce a verbatim original table of contents.
 
 ## Deep manual passports already available
 
-High-risk / high-value nodes also have hand-curated deep pages in addition to the universal passport engine, including:
-
-- SettlementRouter;
-- BaseBridgeVault;
-- TimedQEController;
-- PrefundedSettlementVault;
-- AtomicCreditLiquidityManager;
-- NEXUS;
-- DEGOV;
-- MetaPay;
-- MIDAS;
-- SINERGY Finance;
-- Growth OS.
+High-risk / high-value nodes have hand-curated deep pages in addition to the universal passport engine, including SettlementRouter, BaseBridgeVault, TimedQEController, PrefundedSettlementVault, AtomicCreditLiquidityManager, NEXUS, DEGOV, MetaPay, MIDAS, SINERGY Finance and Growth OS.
 
 ## Visual system
 
@@ -185,71 +132,48 @@ Accessibility invariant:
 
 Workflow: `.github/workflows/validate-v18.yml`
 
-### Structural gate
+### Structural gate — PASS
 
-Checks:
+The structural job checks JS syntax, entity IDs/schema, taxonomy, graph endpoints/types, evidence/repository bindings, Knowledge completeness, deep/local links, secret-like assignments and shared runtime usage.
 
-- JS syntax;
-- duplicate / missing entity IDs;
-- canonical domain taxonomy;
-- unknown edge endpoints / edge types;
-- evidence → entity references;
-- repository → entity references;
-- Knowledge registry completeness;
-- registry deep-page targets;
-- literal local `href/src` targets;
-- secret-like assignments;
-- shared CSS/runtime usage.
+Verified structural result:
 
-A verified run on the V18 branch has already passed this structural gate with:
+- **103 entities**;
+- **50 typed edges**;
+- graph coverage **45 / 103**;
+- **17 evidence artifacts** covering **34 / 103** entities;
+- **31 repository bindings** covering **44 / 103** entities;
+- **7 knowledge guides / 846 source pages**;
+- **38 HTML pages** checked;
+- structural validation **PASS**.
 
-- 103 entities;
-- 50 typed edges;
-- graph coverage 45 / 103;
-- 17 evidence artifacts covering 34 / 103 entities;
-- 31 repository bindings covering 44 / 103 entities;
-- 7 knowledge guides / 846 source pages;
-- 38 HTML pages checked.
+### Chromium visual/runtime gate — hardening in progress
 
-### Chromium visual/runtime gate
+The first real Chromium pass completed page loading and screenshot generation but rejected several routes because of root horizontal overflow. This was useful failure evidence rather than a hidden layout defect.
 
-The browser job runs desktop + mobile routes plus reduced-motion mode and checks:
+The shared runtime now installs a responsive layout guard that:
 
-- HTTP success;
-- page/runtime errors;
-- request failures;
-- visible content;
-- shared visual shell;
-- root horizontal overflow;
-- token taxonomy rendering;
-- Knowledge Library totals;
-- representative screenshots.
+- clips decorative orbit overflow;
+- allows long formulas, entity IDs and repository names to wrap;
+- constrains all grid children to `min-width:0`;
+- collapses Graph controls and relation rows on small screens;
+- preserves local table scrolling instead of creating body overflow.
 
-First real browser run found layout overflow on several pages. The shared responsive guard has been strengthened and the smoke script now reports exact offending DOM elements for any remaining overflow. This gate must be green before root promotion.
+The smoke test now reports exact offending DOM nodes whenever overflow remains. A new full desktop/mobile/reduced-motion validation run is required after these fixes before visual status can be marked PASS.
 
 ## Remaining work after current waves
 
 ### Coverage expansion
 
-The system now exposes its own gaps. Next migration target is to increase:
-
-- graph coverage;
-- evidence coverage;
-- repository coverage;
-- manual deep-page coverage for economically/security-critical nodes.
+The system now exposes its own gaps. Next target is to increase graph, evidence, repository and manual deep-page coverage, prioritizing economic/security-critical entities.
 
 ### Full-text Knowledge migration
 
-846 pages are indexed and semantically decomposed, but the original source text is not yet copied chapter-by-chapter into V18. Next waves should migrate full text while retaining source filenames and version stamps.
+846 pages are indexed and semantically decomposed, but original source text is not yet copied chapter-by-chapter into V18. Next waves should migrate full text while retaining source filenames, versions and citations.
 
 ### Provenance hardening
 
-Add:
-
-- legacy alias registry;
-- per-entity changelog/history;
-- explicit supersession chains;
-- source document bindings beyond GitHub repositories.
+Add legacy alias registry, per-entity changelog/history, explicit supersession chains and source-document bindings beyond GitHub repositories.
 
 ### Production promotion
 
@@ -257,7 +181,6 @@ Only after green validation and zero unmapped critical V17 content:
 
 - archive current root entrypoint;
 - promote V18 routing to root;
-- update `404.html`;
-- update root `README.md`;
-- deploy a dedicated built/static artifact instead of unrelated repository root files;
+- update `404.html` and root `README.md`;
+- deploy a dedicated static artifact instead of unrelated repository root files;
 - keep V17 permanently URL-accessible.

@@ -1,0 +1,53 @@
+/*
+ * SINERGY V17 development style mirror.
+ * The public index.html intentionally contains critical CSS inline so that
+ * downloading/opening index.html alone does not lose the design.
+ * This file documents the main visual tokens and can be used when the portal
+ * is later split into a build pipeline.
+ */
+:root {
+  color-scheme: dark;
+  --bg: #020504;
+  --bg2: #050a07;
+  --panel: #07100b;
+  --panel2: #0a1510;
+  --panel3: #0d1c14;
+  --green: #00e878;
+  --green-soft: #8cffbd;
+  --green-deep: #13b968;
+  --text: #f5fff8;
+  --muted: #9aaca1;
+  --line: rgba(255,255,255,.09);
+  --green-line: rgba(0,232,120,.25);
+  --amber: #ffd166;
+  --red: #ff7888;
+  --blue: #73a7ff;
+  --radius: 22px;
+  --shadow: 0 28px 90px rgba(0,0,0,.5);
+  --max-width: 1540px;
+}
+
+/* Core visual language: black institutional base + white typography +
+   restrained SINERGY green for state, evidence and action. */
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.panel,
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgba(9,20,13,.88), rgba(4,9,6,.93));
+  box-shadow: var(--shadow);
+}
+
+.state-positive { color: var(--green-soft); border-color: var(--green-line); }
+.state-warning { color: var(--amber); }
+.state-critical { color: var(--red); }
+
+/* IMPORTANT: index.html is the canonical rendered source. Do not replace its
+   inline critical CSS with this file unless deployment tests confirm that
+   relative assets are served together. */

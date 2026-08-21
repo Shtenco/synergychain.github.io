@@ -7,12 +7,14 @@ on:
       - 'v18/**'
       - 'scripts/validate-v18.mjs'
       - 'scripts/smoke-v18.mjs'
+      - 'docs/**'
       - '.github/workflows/validate-v18.yml'
   pull_request:
     paths:
       - 'v18/**'
       - 'scripts/validate-v18.mjs'
       - 'scripts/smoke-v18.mjs'
+      - 'docs/**'
       - '.github/workflows/validate-v18.yml'
   workflow_dispatch:
 
@@ -61,3 +63,39 @@ jobs:
           path: artifacts/v18-smoke
           if-no-files-found: warn
           retention-days: 7
+
+  source-package:
+    runs-on: ubuntu-latest
+    needs: [structural, chromium-smoke]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build reproducible source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="release/SINERGY_V18_SOURCE"
+          mkdir -p "$ROOT/.github/workflows"
+          cp -a v18 "$ROOT/"
+          cp -a scripts "$ROOT/"
+          cp -a docs "$ROOT/"
+          cp .github/workflows/validate-v18.yml "$ROOT/.github/workflows/validate-v18.yml"
+          for f in README.md README-V17.md; do [ -f "$f" ] && cp "$f" "$ROOT/"; done
+          cat > "$ROOT/BUILD_INFO.txt" <<EOF
+          SINERGY V18 GREEN SOURCE PACKAGE
+          commit=${GITHUB_SHA}
+          branch=${GITHUB_REF_NAME}
+          workflow_run=${GITHUB_RUN_ID}
+          structural=success
+          chromium_smoke=success
+          EOF
+          (
+            cd "$ROOT"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+      - name: Upload green source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-V18-SOURCE-GREEN-${{ github.sha }}
+          path: release/SINERGY_V18_SOURCE
+          if-no-files-found: error
+          retention-days: 30

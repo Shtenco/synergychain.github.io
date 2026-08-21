@@ -60,7 +60,6 @@
           if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
         }ctx.stroke();
       }
-      // sparse connecting rays
       ctx.rotate(t*.23);ctx.strokeStyle='rgba(141,255,189,.028)';
       for(let i=0;i<34;i++){const a=i/34*Math.PI*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*40,Math.sin(a)*20);ctx.lineTo(Math.cos(a)*min*.82,Math.sin(a)*min*.36);ctx.stroke()}
       ctx.restore();raf=requestAnimationFrame(draw)
@@ -75,19 +74,27 @@
     try{const p=new URL(a.href,location.href).pathname.replace(/\/+$/,'/'); if(p===here || (here.includes('/v18/')&&a.dataset.domain&&here.includes('/'+a.dataset.domain+'/')))a.classList.add('active')}catch{}
   });
 
+  const esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const explorerBase=()=>{
+    const p=location.pathname;
+    if(p.includes('/v18/explorer/'))return '';
+    if(p.includes('/v18/'))return '../explorer/';
+    return 'v18/explorer/';
+  };
+  const passportHref=x=>explorerBase()+`entity.html?id=${encodeURIComponent(x.id)}`;
+
   // Explorer
   const box=qs('#entityGrid');
   if(box && Array.isArray(window.SINERGY_ENTITIES)){
     const search=qs('#entitySearch'),domain=qs('#domainFilter'),type=qs('#typeFilter'),status=qs('#statusFilter'),count=qs('#entityCount');
     const uniq=k=>[...new Set(SINERGY_ENTITIES.map(x=>x[k]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
-    const fill=(el,items,label)=>{if(!el)return;el.innerHTML=`<option value="">${label}</option>`+items.map(x=>`<option>${x}</option>`).join('')};
+    const fill=(el,items,label)=>{if(!el)return;el.innerHTML=`<option value="">${label}</option>`+items.map(x=>`<option>${esc(x)}</option>`).join('')};
     fill(domain,uniq('domain'),'Все домены');fill(type,uniq('entityType'),'Все типы');fill(status,uniq('status'),'Все статусы');
-    const esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     const render=()=>{
       const q=(search?.value||'').trim().toLowerCase(),d=domain?.value||'',ty=type?.value||'',st=status?.value||'';
       const rows=SINERGY_ENTITIES.filter(x=>(!d||x.domain===d)&&(!ty||x.entityType===ty)&&(!st||x.status===st)&&(!q||Object.values(x).join(' ').toLowerCase().includes(q)));
       if(count)count.textContent=rows.length;
-      box.innerHTML=rows.length?rows.map(x=>`<article class="entity-card reveal in"><div class="entity-meta"><span class="tag">${esc(x.domain)}</span><span class="status ${esc(x.status)}">${esc(x.status)}</span><span class="tag">${esc(x.evidence||'L0')}</span></div><h3>${esc(x.name)}</h3><p>${esc(x.summary)}</p><div class="tiny">${esc(x.entityType)} · ${esc(x.moneyRole||'non-monetary')}</div>${x.href?`<div style="margin-top:10px"><a class="btn ghost" href="${esc(x.href)}">Паспорт →</a></div>`:''}</article>`).join(''):'<div class="empty">Ничего не найдено.</div>';
+      box.innerHTML=rows.length?rows.map(x=>`<article class="entity-card reveal in"><div class="entity-meta"><span class="tag">${esc(x.domain)}</span><span class="status ${esc(x.status)}">${esc(x.status)}</span><span class="tag">${esc(x.evidence||'L0')}</span></div><h3>${esc(x.name)}</h3><p>${esc(x.summary)}</p><div class="tiny">${esc(x.entityType)} · ${esc(x.moneyRole||'non-monetary')}</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost" href="${passportHref(x)}">Паспорт →</a>${x.href?`<a class="btn ghost" href="${esc(x.href)}">Deep page →</a>`:''}</div></article>`).join(''):'<div class="empty">Ничего не найдено.</div>';
     };
     [search,domain,type,status].filter(Boolean).forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',render));render();
   }

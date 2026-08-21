@@ -1,0 +1,63 @@
+name: Validate SINERGY V18
+
+on:
+  push:
+    branches: [portal-v18-top]
+    paths:
+      - 'v18/**'
+      - 'scripts/validate-v18.mjs'
+      - 'scripts/smoke-v18.mjs'
+      - '.github/workflows/validate-v18.yml'
+  pull_request:
+    paths:
+      - 'v18/**'
+      - 'scripts/validate-v18.mjs'
+      - 'scripts/smoke-v18.mjs'
+      - '.github/workflows/validate-v18.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structural:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: find v18 -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Registry, graph, links and secrets
+        run: node scripts/validate-v18.mjs
+
+  chromium-smoke:
+    runs-on: ubuntu-latest
+    needs: structural
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start static server
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 > /tmp/v18-http.log 2>&1 &
+          echo $! > /tmp/v18-http.pid
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/v18/ >/dev/null && exit 0; sleep 1; done
+          cat /tmp/v18-http.log
+          exit 1
+      - name: Desktop, mobile and reduced-motion smoke
+        run: node scripts/smoke-v18.mjs
+      - name: Upload visual smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v18-visual-smoke
+          path: artifacts/v18-smoke
+          if-no-files-found: warn
+          retention-days: 7

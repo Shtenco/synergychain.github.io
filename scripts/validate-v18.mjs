@@ -64,7 +64,6 @@ for(const k of knowledge){
 const knowledgeSourceEntities=entities.filter(e=>e.domain==='Знания'&&['guide','reference'].includes(e.entityType));
 for(const e of knowledgeSourceEntities) if(!knowledgeIds.has(e.id)) fail(`${e.id}: guide/reference entity has no knowledge registry row`);
 
-// Coverage is informational now; future waves can raise thresholds without changing schemas.
 const hasEdge=id=>edges.some(x=>x.from===id||x.to===id);
 const hasEvidence=id=>evidence.some(x=>(x.entities||[]).includes(id));
 const hasRepo=id=>repos.some(x=>(x.entities||[]).includes(id));
@@ -75,7 +74,7 @@ if(edgeCoverage/entities.length<0.35) warn(`graph coverage low: ${edgeCoverage}/
 if(evidenceCoverage/entities.length<0.20) warn(`evidence coverage low: ${evidenceCoverage}/${entities.length}`);
 if(repoCoverage/entities.length<0.25) warn(`repository coverage low: ${repoCoverage}/${entities.length}`);
 
-// Validate entity deep links as they resolve from Explorer.
+// Validate registry deep links as they resolve from Explorer.
 for(const e of entities){
   if(!e.href) continue;
   const resolved=path.normalize(path.join(V18,'explorer',String(e.href).split(/[?#]/)[0]));
@@ -84,7 +83,7 @@ for(const e of entities){
   if(!ok) fail(`${e.id}: broken entity href ${e.href}`);
 }
 
-// Local href/src integrity across all V18 HTML.
+// Local literal href/src integrity across V18 HTML. Dynamic JS template hrefs are runtime-tested by Chromium, not treated as filesystem literals.
 const htmlFiles=walk(V18,'.html');
 const attrRe=/(?:href|src)=["']([^"']+)["']/g;
 for(const file of htmlFiles){
@@ -92,7 +91,7 @@ for(const file of htmlFiles){
   let m;
   while((m=attrRe.exec(text))){
     const raw=m[1];
-    if(!raw||raw.startsWith('#')||/^(https?:|mailto:|tel:|data:|javascript:)/i.test(raw)) continue;
+    if(!raw||raw.includes('${')||raw.startsWith('#')||/^(https?:|mailto:|tel:|data:|javascript:)/i.test(raw)) continue;
     const clean=raw.split(/[?#]/)[0]; if(!clean) continue;
     const target=clean.startsWith('/')?path.join(ROOT,clean.replace(/^\//,'')):path.resolve(path.dirname(file),clean);
     let ok=fs.existsSync(target);
@@ -102,7 +101,6 @@ for(const file of htmlFiles){
   if(/target=["']_blank["']/i.test(text)&&!(/rel=["'][^"']*noopener/i.test(text))) warn(`${path.relative(ROOT,file)}: target=_blank without noopener somewhere`);
 }
 
-// Secret-like assignments: deliberately narrow to avoid prose false positives.
 const secretRe=/(api[_-]?key|private[_-]?key|secret|seed|mnemonic)\s*[:=]\s*["'][A-Za-z0-9_\/+=.-]{16,}["']/ig;
 for(const file of walk(V18)){
   if(!/\.(html|js|json|md|css)$/i.test(file)) continue;
@@ -111,7 +109,6 @@ for(const file of walk(V18)){
   secretRe.lastIndex=0;
 }
 
-// Shared runtime expectations.
 for(const file of htmlFiles){
   const rel=path.relative(ROOT,file).replaceAll('\\','/'),text=fs.readFileSync(file,'utf8');
   if(!text.includes('sinergy-v18.css')) warn(`${rel}: not using shared V18 CSS`);

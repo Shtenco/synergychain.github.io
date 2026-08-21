@@ -37,9 +37,9 @@ function rewriteDirectoryHref(ref){
   return pathname+suffix;
 }
 
-const offlineRouter=`<script data-v18-offline-router>(function(){\nconst remote=/^(?:[a-z][a-z0-9+.-]*:|\\/\\/|#)/i;\nfunction fix(a){const raw=a.getAttribute('href');if(!raw||remote.test(raw)||raw.startsWith('mailto:')||raw.startsWith('tel:')||raw.startsWith('javascript:'))return;const m=raw.match(/^([^?#]*)([?#].*)?$/);if(m&&m[1].endsWith('/'))a.setAttribute('href',m[1]+'index.html'+(m[2]||''));}\nfunction scan(root){if(root.nodeType===1&&root.matches?.('a[href]'))fix(root);root.querySelectorAll?.('a[href]').forEach(fix);}\nscan(document);new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(scan))).observe(document.documentElement,{childList:true,subtree:true});\ndocument.documentElement.dataset.v18Offline='standalone';\n})();<\/script>`;
+const offlineRouter=`<noscript><style data-v18-offline-noscript>.reveal{opacity:1!important;transform:none!important;filter:none!important}</style></noscript><script data-v18-offline-router>(function(){\nconst remote=/^(?:[a-z][a-z0-9+.-]*:|\\/\\/|#)/i;\nfunction fix(a){const raw=a.getAttribute('href');if(!raw||remote.test(raw)||raw.startsWith('mailto:')||raw.startsWith('tel:')||raw.startsWith('javascript:'))return;const m=raw.match(/^([^?#]*)([?#].*)?$/);if(m&&m[1].endsWith('/'))a.setAttribute('href',m[1]+'index.html'+(m[2]||''));}\nfunction scan(root){if(root.nodeType===1&&root.matches?.('a[href]'))fix(root);root.querySelectorAll?.('a[href]').forEach(fix);}\nfunction revealFailSafe(){document.querySelectorAll('.reveal').forEach(el=>el.classList.add('in'));}\nscan(document);new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(scan))).observe(document.documentElement,{childList:true,subtree:true});\ndocument.documentElement.dataset.v18Offline='standalone';\nsetTimeout(revealFailSafe,1800);addEventListener('pageshow',()=>setTimeout(revealFailSafe,1800),{once:true});\n})();<\/script>`;
 
-const manifest={format:'sinergy-v18-standalone-v1',builtAt:new Date().toISOString(),sourceRoot:path.relative(process.cwd(),sourceRoot),pages:[]};
+const manifest={format:'sinergy-v18-standalone-v2',builtAt:new Date().toISOString(),sourceRoot:path.relative(process.cwd(),sourceRoot),pages:[]};
 
 for(const src of htmlFiles){
   let html=fs.readFileSync(src,'utf8');
@@ -68,7 +68,6 @@ for(const src of htmlFiles){
 
   if(!html.includes('data-v18-offline-router')) html=html.replace(/<\/body>/i,offlineRouter+'\n</body>');
 
-  // A standalone page must not retain local stylesheet/script dependencies.
   const localCss=[...html.matchAll(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].map(m=>m[1]).filter(x=>!isRemote(x));
   const localScripts=[...html.matchAll(/<script\b[^>]*src=["']([^"']+)["'][^>]*>/gi)].map(m=>m[1]).filter(x=>!isRemote(x));
   if(localCss.length||localScripts.length) throw new Error(`${rel}: residual local assets css=${localCss.join(',')} js=${localScripts.join(',')}`);
@@ -79,12 +78,11 @@ for(const src of htmlFiles){
   manifest.pages.push({path:rel,bytes:Buffer.byteLength(html),sha256:sha256(html),inlined});
 }
 
-// Offline entry points and integrity metadata.
 const sums=[];
 for(const p of manifest.pages) sums.push(`${p.sha256}  ${p.path}`);
 fs.writeFileSync(path.join(outRoot,'STANDALONE_MANIFEST.json'),JSON.stringify(manifest,null,2));
 fs.writeFileSync(path.join(outRoot,'SHA256SUMS.txt'),sums.join('\n')+'\n');
 fs.writeFileSync(path.join(outRoot,'OPEN_ME.html'),`<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=index.html"><title>SINERGY V18 · OPEN ME</title><p><a href="index.html">Открыть SINERGY V18</a></p>`);
-fs.writeFileSync(path.join(outRoot,'README_OFFLINE.txt'),`SINERGY V18 — OFFLINE / STANDALONE BUILD\n\n1. Распакуйте архив полностью.\n2. Откройте OPEN_ME.html или index.html двойным кликом.\n3. Сервер и интернет для CSS/JS не нужны: стили и runtime встроены в каждую HTML-страницу.\n4. Внутренние directory-links переписаны на explicit index.html для file://.\n\nPages: ${manifest.pages.length}\n`);
+fs.writeFileSync(path.join(outRoot,'README_OFFLINE.txt'),`SINERGY V18 — OFFLINE / STANDALONE BUILD\n\n1. Можно открыть index.html даже отдельно: CSS/JS встроены в страницу.\n2. Для переходов между всеми страницами распакуйте архив полностью и откройте OPEN_ME.html.\n3. Сервер и интернет для CSS/JS не нужны.\n4. Directory-links переписаны на explicit index.html для file://.\n5. Reveal имеет fail-safe: контент принудительно раскрывается, даже если observer не сработал; при отключённом JS действует noscript fallback.\n\nPages: ${manifest.pages.length}\n`);
 
-console.log(`V18 STANDALONE BUILD: PASS (${manifest.pages.length} HTML pages, CSS/JS inlined, file:// links normalized)`);
+console.log(`V18 STANDALONE BUILD: PASS (${manifest.pages.length} HTML pages, CSS/JS inlined, file:// links normalized, reveal fail-safe enabled)`);

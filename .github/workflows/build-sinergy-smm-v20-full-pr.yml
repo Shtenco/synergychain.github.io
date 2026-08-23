@@ -21,21 +21,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Restore full source embedded in canonical build workflow
+      - name: Restore full source from deterministic chunks
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/sinergy-smm-full
-          awk '
-            BEGIN { capture=0 }
-            /^[[:space:]]*H4sIA/ { capture=1 }
-            capture {
-              if ($0 ~ /^[[:space:]]*B64[[:space:]]*$/) exit
-              gsub(/[[:space:]]/, "", $0)
-              printf "%s", $0
-            }
-          ' .github/workflows/build-sinergy-smm-v20-full.yml > /tmp/source.b64
-          test -s /tmp/source.b64
+          cat smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04 > /tmp/source.b64
+          test "$(wc -c < /tmp/source.b64)" -eq 63380
+          echo "f01978dfca148bc477d8e78a89ff2883936411cff489b6ff5d275b0afa2c7943  /tmp/source.b64" | sha256sum -c -
           base64 -d /tmp/source.b64 > /tmp/source.tar.gz
           gzip -t /tmp/source.tar.gz
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full

@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -24,33 +24,48 @@ jobs:
       - name: Restore full source embedded in canonical build workflow
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p /tmp/sinergy-smm-full
-          awk '/^H4sIA/{flag=1} flag{if($0=="B64"){exit} print}' .github/workflows/build-sinergy-smm-v20-full.yml > /tmp/source.b64
+          awk '
+            BEGIN { capture=0 }
+            /^[[:space:]]*H4sIA/ { capture=1 }
+            capture {
+              if ($0 ~ /^[[:space:]]*B64[[:space:]]*$/) exit
+              gsub(/[[:space:]]/, "", $0)
+              printf "%s", $0
+            }
+          ' .github/workflows/build-sinergy-smm-v20-full.yml > /tmp/source.b64
+          test -s /tmp/source.b64
           base64 -d /tmp/source.b64 > /tmp/source.tar.gz
+          gzip -t /tmp/source.tar.gz
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full
+          test -s /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Verify full UI source
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           ROOT=/tmp/sinergy-smm-full/android/app/src/main/assets/www
           node --check "$ROOT/js/app.js"
           ROUTES=$(grep -o 'class="route' "$ROOT/index.html" | wc -l)
           test "$ROUTES" -ge 12
           for route in home studio calendar publisher inbox leads audience analytics brain autopilot integrations settings; do grep -q "data-route=\"$route\"" "$ROOT/index.html"; done
-          test $(wc -c < "$ROOT/index.html") -gt 20000
-          test $(wc -c < "$ROOT/css/app.css") -gt 100000
-          test $(wc -c < "$ROOT/js/app.js") -gt 35000
+          test "$(wc -c < "$ROOT/index.html")" -gt 20000
+          test "$(wc -c < "$ROOT/css/app.css")" -gt 100000
+          test "$(wc -c < "$ROOT/js/app.js")" -gt 35000
           grep -q 'smm-logo.svg' "$ROOT/index.html"
+          test -s "$ROOT/css/smm.css"
+          test -s "$ROOT/icons/smm-logo.svg"
       - name: Build installable APK
         working-directory: /tmp/sinergy-smm-full/android
         run: gradle --no-daemon clean :app:assembleDebug
       - name: Verify APK payload
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           APK=$(find /tmp/sinergy-smm-full/android/app/build/outputs/apk/debug -name '*.apk' -type f | head -1)
+          test -n "$APK"
           unzip -t "$APK" >/dev/null
           unzip -l "$APK" > /tmp/apk-files.txt
           for f in assets/www/index.html assets/www/js/app.js assets/www/css/app.css assets/www/css/smm.css assets/www/icons/smm-logo.svg res/drawable/ic_launcher.xml; do grep -q "$f" /tmp/apk-files.txt; done

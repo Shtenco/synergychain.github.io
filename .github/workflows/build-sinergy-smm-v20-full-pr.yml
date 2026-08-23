@@ -21,46 +21,70 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Restore full source from deterministic chunks
+      - name: Recover and restore full source
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/sinergy-smm-full
-          for f in smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04; do
-            printf '%s bytes=' "$f"; wc -c < "$f"
-          done
-          cat smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04 | tr -d '\r\n\t ' > /tmp/source.raw.b64
-          echo "raw_normalized_bytes=$(wc -c < /tmp/source.raw.b64)"
           python3 - <<'PY'
-          import base64,gzip,pathlib
-          s=pathlib.Path('/tmp/source.raw.b64').read_text().strip()
-          candidates=[]
+          import base64,gzip,pathlib,zlib,string,time
+          paths=[pathlib.Path(f'smm-v2-build/source.b64.part0{i}') for i in range(5)]
+          parts=[''.join(p.read_text().split()) for p in paths]
+          print('part_lengths', [len(x) for x in parts])
+          assert [len(x) for x in parts]==[10000,16000,15999,16000,7380]
+          s=''.join(parts)
+          assert len(s)==65379
+          alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+          # The stream is exactly one base64 data character short. Estimate the corruption point
+          # by inserting a harmless character before padding and observing where DEFLATE first fails.
           eq=s.find('=')
-          if eq>=0:
-              end=eq+1
-              while end < len(s) and s[end]=='=': end+=1
-              candidates.append(('first_padding',s[:end]))
-          candidates.append(('canonical_len',s[:63380]))
-          candidates.append(('full',s))
-          seen=set()
-          for name,c in candidates:
-              if c in seen: continue
-              seen.add(c)
+          assert eq>0
+          probe=s[:eq]+'A'+s[eq:]
+          raw=base64.b64decode(probe, validate=True)
+          d=zlib.decompressobj(31)
+          err_byte=None
+          for i in range(0,len(raw),32):
               try:
-                  cc=c + '='*((-len(c))%4)
-                  raw=base64.b64decode(cc, validate=False)
-                  gzip.decompress(raw)
-                  pathlib.Path('/tmp/source.tar.gz').write_bytes(raw)
-                  print('RECOVERED',name,'b64_bytes',len(c),'gzip_bytes',len(raw))
+                  d.decompress(raw[i:i+32])
+              except zlib.error:
+                  err_byte=i
                   break
-              except Exception as e:
-                  print('candidate_failed',name,len(c),type(e).__name__,str(e)[:160])
-          else:
-              raise SystemExit('No candidate produced a valid gzip stream')
+          if err_byte is None: err_byte=len(raw)//2
+          approx=int(err_byte*4/3)
+          p2_start=len(parts[0])+len(parts[1])
+          p2_end=p2_start+len(parts[2])
+          print('deflate_error_byte',err_byte,'approx_b64_pos',approx,'part02_range',p2_start,p2_end)
+          def try_range(lo,hi,label):
+              t=time.time(); n=0
+              lo=max(p2_start,lo); hi=min(p2_end,hi)
+              print('search',label,lo,hi)
+              for pos in range(lo,hi+1):
+                  for ch in alphabet:
+                      n+=1
+                      c=s[:pos]+ch+s[pos:]
+                      try:
+                          b=base64.b64decode(c,validate=True)
+                          gzip.decompress(b)
+                      except Exception:
+                          continue
+                      pathlib.Path('/tmp/source.tar.gz').write_bytes(b)
+                      pathlib.Path('/tmp/recovered.txt').write_text(f'position={pos}\nchar={ch}\n')
+                      print('RECOVERED',pos,ch,'tries',n,'seconds',round(time.time()-t,2),'gzip_bytes',len(b))
+                      return True
+              print('not_found',label,'tries',n,'seconds',round(time.time()-t,2))
+              return False
+          # Search around the first DEFLATE failure, then the whole damaged chunk if needed.
+          radius=1800
+          ok=try_range(approx-radius,approx+radius,'targeted')
+          if not ok:
+              ok=try_range(p2_start,p2_end,'full_part02')
+          if not ok:
+              raise SystemExit('Unable to recover the one missing base64 character')
           PY
           gzip -t /tmp/source.tar.gz
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full
           test -s /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html
+          cat /tmp/recovered.txt
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Verify full UI source
@@ -70,6 +94,7 @@ jobs:
           ROOT=/tmp/sinergy-smm-full/android/app/src/main/assets/www
           node --check "$ROOT/js/app.js"
           ROUTES=$(grep -o 'class="route' "$ROOT/index.html" | wc -l)
+          echo "routes=$ROUTES"
           test "$ROUTES" -ge 12
           for route in home studio calendar publisher inbox leads audience analytics brain autopilot integrations settings; do grep -q "data-route=\"$route\"" "$ROOT/index.html"; done
           test "$(wc -c < "$ROOT/index.html")" -gt 20000
@@ -93,6 +118,7 @@ jobs:
           mkdir -p /tmp/dist
           cp "$APK" /tmp/dist/SINERGY-SMM-v2.0.0-FULL-BETA.apk
           sha256sum /tmp/dist/SINERGY-SMM-v2.0.0-FULL-BETA.apk > /tmp/dist/SINERGY-SMM-v2.0.0-FULL-BETA.apk.sha256
+          cp /tmp/recovered.txt /tmp/dist/SOURCE-RECOVERY.txt
           printf 'routes=12\nindex_bytes=%s\napp_css_bytes=%s\nsmm_css_bytes=%s\napp_js_bytes=%s\n' "$(wc -c < /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html)" "$(wc -c < /tmp/sinergy-smm-full/android/app/src/main/assets/www/css/app.css)" "$(wc -c < /tmp/sinergy-smm-full/android/app/src/main/assets/www/css/smm.css)" "$(wc -c < /tmp/sinergy-smm-full/android/app/src/main/assets/www/js/app.js)" > /tmp/dist/BUILD-VERIFY.txt
       - uses: actions/upload-artifact@v4
         with:

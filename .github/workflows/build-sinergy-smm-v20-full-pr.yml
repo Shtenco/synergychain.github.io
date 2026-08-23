@@ -27,59 +27,56 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/sinergy-smm-full
           python3 - <<'PY'
-          import base64,gzip,pathlib,zlib,string,time
+          import base64,gzip,pathlib,time,zlib
           paths=[pathlib.Path(f'smm-v2-build/source.b64.part0{i}') for i in range(5)]
           parts=[''.join(p.read_text().split()) for p in paths]
           print('part_lengths', [len(x) for x in parts])
           assert [len(x) for x in parts]==[10000,16000,15999,16000,7380]
           s=''.join(parts)
-          assert len(s)==65379
           alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-          # The stream is exactly one base64 data character short. Estimate the corruption point
-          # by inserting a harmless character before padding and observing where DEFLATE first fails.
-          eq=s.find('=')
-          assert eq>0
-          probe=s[:eq]+'A'+s[eq:]
-          raw=base64.b64decode(probe, validate=True)
-          d=zlib.decompressobj(31)
-          err_byte=None
-          for i in range(0,len(raw),32):
-              try:
-                  d.decompress(raw[i:i+32])
-              except zlib.error:
-                  err_byte=i
-                  break
-          if err_byte is None: err_byte=len(raw)//2
-          approx=int(err_byte*4/3)
           p2_start=len(parts[0])+len(parts[1])
           p2_end=p2_start+len(parts[2])
-          print('deflate_error_byte',err_byte,'approx_b64_pos',approx,'part02_range',p2_start,p2_end)
-          def try_range(lo,hi,label):
-              t=time.time(); n=0
-              lo=max(p2_start,lo); hi=min(p2_end,hi)
-              print('search',label,lo,hi)
+          def test(pos,ch):
+              c=s[:pos]+ch+s[pos:]
+              try:
+                  raw=base64.b64decode(c,validate=True)
+                  gzip.decompress(raw)
+              except Exception:
+                  return False
+              pathlib.Path('/tmp/source.tar.gz').write_bytes(raw)
+              pathlib.Path('/tmp/recovered.txt').write_text(f'position={pos}\nchar={ch}\n')
+              print('RECOVERED',pos,ch,'gzip_bytes',len(raw))
+              return True
+          # A one-character-short chunk is most commonly a dropped edge character.
+          positions=[]
+          for center in (p2_end,p2_start):
+              for d in range(0,257):
+                  for pos in ({center-d,center+d} if d else {center}):
+                      if p2_start <= pos <= p2_end and pos not in positions:
+                          positions.append(pos)
+          t=time.time()
+          for pos in positions:
+              for ch in alphabet:
+                  if test(pos,ch):
+                      print('fast_recovery_seconds',round(time.time()-t,2),'positions_tested',positions.index(pos)+1)
+                      raise SystemExit(0)
+          # Pinpoint where the corrupted decoded stream first breaks, then search a tighter neighborhood.
+          eq=s.find('=')
+          probe=s[:eq]+'A'+s[eq:]
+          raw=base64.b64decode(probe,validate=True)
+          d=zlib.decompressobj(31); err=None
+          for i in range(0,len(raw),64):
+              try: d.decompress(raw[i:i+64])
+              except zlib.error:
+                  err=i; break
+          approx=max(p2_start,min(p2_end,int((err or 0)*4/3)))
+          print('approx_position',approx,'deflate_error_byte',err)
+          for radius in (512,2048):
+              lo=max(p2_start,approx-radius); hi=min(p2_end,approx+radius)
               for pos in range(lo,hi+1):
                   for ch in alphabet:
-                      n+=1
-                      c=s[:pos]+ch+s[pos:]
-                      try:
-                          b=base64.b64decode(c,validate=True)
-                          gzip.decompress(b)
-                      except Exception:
-                          continue
-                      pathlib.Path('/tmp/source.tar.gz').write_bytes(b)
-                      pathlib.Path('/tmp/recovered.txt').write_text(f'position={pos}\nchar={ch}\n')
-                      print('RECOVERED',pos,ch,'tries',n,'seconds',round(time.time()-t,2),'gzip_bytes',len(b))
-                      return True
-              print('not_found',label,'tries',n,'seconds',round(time.time()-t,2))
-              return False
-          # Search around the first DEFLATE failure, then the whole damaged chunk if needed.
-          radius=1800
-          ok=try_range(approx-radius,approx+radius,'targeted')
-          if not ok:
-              ok=try_range(p2_start,p2_end,'full_part02')
-          if not ok:
-              raise SystemExit('Unable to recover the one missing base64 character')
+                      if test(pos,ch): raise SystemExit(0)
+          raise SystemExit('Unable to recover missing base64 character')
           PY
           gzip -t /tmp/source.tar.gz
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full

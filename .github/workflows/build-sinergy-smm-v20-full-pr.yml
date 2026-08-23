@@ -26,13 +26,38 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/sinergy-smm-full
+          for f in smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04; do
+            printf '%s bytes=' "$f"; wc -c < "$f"
+          done
           cat smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04 | tr -d '\r\n\t ' > /tmp/source.raw.b64
           echo "raw_normalized_bytes=$(wc -c < /tmp/source.raw.b64)"
-          head -c 63380 /tmp/source.raw.b64 > /tmp/source.b64
-          echo "trimmed_bytes=$(wc -c < /tmp/source.b64)"
-          sha256sum /tmp/source.b64
-          echo "f01978dfca148bc477d8e78a89ff2883936411cff489b6ff5d275b0afa2c7943  /tmp/source.b64" | sha256sum -c -
-          base64 -d /tmp/source.b64 > /tmp/source.tar.gz
+          python3 - <<'PY'
+          import base64,gzip,pathlib
+          s=pathlib.Path('/tmp/source.raw.b64').read_text().strip()
+          candidates=[]
+          eq=s.find('=')
+          if eq>=0:
+              end=eq+1
+              while end < len(s) and s[end]=='=': end+=1
+              candidates.append(('first_padding',s[:end]))
+          candidates.append(('canonical_len',s[:63380]))
+          candidates.append(('full',s))
+          seen=set()
+          for name,c in candidates:
+              if c in seen: continue
+              seen.add(c)
+              try:
+                  cc=c + '='*((-len(c))%4)
+                  raw=base64.b64decode(cc, validate=False)
+                  gzip.decompress(raw)
+                  pathlib.Path('/tmp/source.tar.gz').write_bytes(raw)
+                  print('RECOVERED',name,'b64_bytes',len(c),'gzip_bytes',len(raw))
+                  break
+              except Exception as e:
+                  print('candidate_failed',name,len(c),type(e).__name__,str(e)[:160])
+          else:
+              raise SystemExit('No candidate produced a valid gzip stream')
+          PY
           gzip -t /tmp/source.tar.gz
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full
           test -s /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html

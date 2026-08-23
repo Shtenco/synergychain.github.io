@@ -27,9 +27,9 @@ jobs:
           set -euo pipefail
           cat smm-v2-clean/part00 smm-v2-clean/part01 smm-v2-clean/part02 smm-v2-clean/part03 smm-v2-clean/part04 smm-v2-clean/part05 smm-v2-clean/part06 smm-v2-clean/part07 > /tmp/source.b64
           test "$(wc -c < /tmp/source.b64)" -eq 63412
-          echo "f023c432c8fe45d75fc98bfc9f9530b62d88332388f586108e5850eb5e834d76  /tmp/source.b64" | sha256sum -c -
+          echo "c94839585d53daadde6f2bb35e0fd41dcd84c7154cf90ce351d74563059df3bc  /tmp/source.b64" | sha256sum -c -
           base64 -d /tmp/source.b64 > /tmp/source.tar.gz
-          echo "50e65a3e8803ecc496c4ecb47efbfae4524129dda78747abfaa07754cb787890  /tmp/source.tar.gz" | sha256sum -c -
+          echo "056801942413089735dea03b37f608a9283340a451792a69c1eb040a9b6ab305  /tmp/source.tar.gz" | sha256sum -c -
           gzip -t /tmp/source.tar.gz
           mkdir -p /tmp/sinergy-smm-full
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full

@@ -34,6 +34,47 @@ jobs:
           mkdir -p /tmp/sinergy-smm-full
           tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full
           test -s /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html
+      - name: Fix Android Gradle DSL
+        shell: bash
+        run: |
+          cat > /tmp/sinergy-smm-full/android/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'ai.sinergy.smm'
+              compileSdk 36
+
+              defaultConfig {
+                  applicationId 'ai.sinergy.smm'
+                  minSdk 26
+                  targetSdk 36
+                  versionCode 200
+                  versionName '2.0.0'
+              }
+
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.activity:activity:1.10.1'
+              implementation 'androidx.webkit:webkit:1.14.0'
+          }
+          EOF
       - name: Install Android API 36
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Verify full UI source

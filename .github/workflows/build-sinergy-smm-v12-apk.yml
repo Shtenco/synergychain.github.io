@@ -1,0 +1,79 @@
+name: Build SINERGY SMM v1.2 APK
+
+on:
+  push:
+    branches: [build-sinergy-smm-v12]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Create Expo SDK 57 project
+        run: npx --yes create-expo-app@latest /tmp/sinergy-smm --template default@sdk-57 --yes
+      - name: Install SINERGY SMM v1.2 mobile client
+        shell: bash
+        run: |
+          cd /tmp/sinergy-smm
+          rm -rf app
+          mkdir -p app
+          cat > app.json <<'EOF'
+          {"expo":{"name":"Синергия-СММ","slug":"sinergy-smm","version":"1.2.0","scheme":"sinergysmm","ios":{"bundleIdentifier":"ai.sinergy.smm"},"android":{"package":"ai.sinergy.smm","versionCode":12,"adaptiveIcon":{"backgroundColor":"#080b09"}},"runtimeVersion":"1.2.0","plugins":["expo-router"]}}
+          EOF
+          cat > app/_layout.tsx <<'EOF'
+          import { Tabs } from 'expo-router'; import { StatusBar } from 'expo-status-bar';
+          export default function Layout(){return <><StatusBar style="light"/><Tabs screenOptions={{headerShown:false,tabBarStyle:{backgroundColor:'#0d120f',borderTopColor:'#213027'},tabBarActiveTintColor:'#60ff86',tabBarInactiveTintColor:'#77827b'}}><Tabs.Screen name="index" options={{title:'Главная'}}/><Tabs.Screen name="create" options={{title:'Создать'}}/><Tabs.Screen name="calendar" options={{title:'Календарь'}}/><Tabs.Screen name="inbox" options={{title:'Входящие'}}/><Tabs.Screen name="more" options={{title:'Ещё'}}/></Tabs></>}
+          EOF
+          cat > app/index.tsx <<'EOF'
+          import {ScrollView,Text,View,Pressable} from 'react-native';
+          const Card=({children}:{children:any})=><View style={{backgroundColor:'#111713',borderWidth:1,borderColor:'#24352a',borderRadius:22,padding:20,marginTop:14}}>{children}</View>;
+          export default function Home(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900',letterSpacing:2}}>SINERGY</Text><Text style={{color:'white',fontSize:36,fontWeight:'900',marginTop:6}}>СММ</Text><Text style={{color:'#9ba7a0',marginTop:8,fontSize:16}}>AI-командный центр бренда</Text><View style={{flexDirection:'row',gap:12,marginTop:24}}><Metric title="Входящие" value="0"/><Metric title="Лиды" value="0"/></View><Card><Text style={{color:'white',fontSize:22,fontWeight:'800'}}>AI Автопилот</Text><Text style={{color:'#a9b3ad',marginTop:8,lineHeight:21}}>Brand Brain → AI Studio → календарь → публикация → входящие → лиды → аналитика.</Text><Pressable style={{backgroundColor:'#60ff86',padding:15,borderRadius:15,marginTop:16}}><Text style={{fontWeight:'900',textAlign:'center'}}>Запустить планирование</Text></Pressable></Card><Card><Text style={{color:'white',fontWeight:'800',fontSize:18}}>Подключения</Text><Text style={{color:'#a9b3ad',marginTop:8}}>VK · Telegram · Instagram · Facebook · WhatsApp</Text></Card></ScrollView>}
+          function Metric({title,value}:{title:string,value:string}){return <View style={{flex:1,backgroundColor:'#111713',padding:18,borderRadius:18,borderWidth:1,borderColor:'#24352a'}}><Text style={{color:'#9ba7a0'}}>{title}</Text><Text style={{color:'white',fontSize:30,fontWeight:'900',marginTop:6}}>{value}</Text></View>}
+          EOF
+          cat > app/create.tsx <<'EOF'
+          import {ScrollView,Text,TextInput,Pressable,View} from 'react-native'; export default function Create(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>AI STUDIO</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Создать контент</Text><Text style={{color:'#9ba7a0',marginTop:8}}>Опиши цель — Brand Brain подготовит пакет для выбранных каналов.</Text><TextInput multiline placeholder="Например: рилс о новой услуге, CTA на запись..." placeholderTextColor="#657069" style={{minHeight:150,backgroundColor:'#111713',color:'white',borderWidth:1,borderColor:'#26392d',borderRadius:18,padding:16,marginTop:24,textAlignVertical:'top'}}/><View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:14}}>{['VK','Telegram','Instagram','Facebook','WhatsApp'].map(x=><View key={x} style={{borderWidth:1,borderColor:'#345440',borderRadius:14,paddingHorizontal:12,paddingVertical:8}}><Text style={{color:'#b8c3bc'}}>{x}</Text></View>)}</View><Pressable style={{backgroundColor:'#60ff86',padding:17,borderRadius:16,marginTop:20}}><Text style={{fontWeight:'900',textAlign:'center'}}>Сгенерировать с AI</Text></Pressable></ScrollView>}
+          EOF
+          cat > app/calendar.tsx <<'EOF'
+          import {ScrollView,Text,View} from 'react-native'; export default function Calendar(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>CONTENT CALENDAR</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Календарь</Text>{['Сегодня','Завтра','На этой неделе'].map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:14}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>{x}</Text><Text style={{color:'#8d9a92',marginTop:8}}>Публикаций пока нет</Text></View>)}</ScrollView>}
+          EOF
+          cat > app/inbox.tsx <<'EOF'
+          import {ScrollView,Text,View} from 'react-native'; export default function Inbox(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>OMNICHANNEL INBOX</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Входящие</Text><View style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:20}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>Единый диалоговый центр</Text><Text style={{color:'#9ba7a0',marginTop:8,lineHeight:21}}>Сообщения из подключённых каналов появятся здесь. SINERGY подготовит AI-черновик и создаст CRM-лид.</Text></View></ScrollView>}
+          EOF
+          cat > app/more.tsx <<'EOF'
+          import {ScrollView,Text,View} from 'react-native'; const rows=['Brand Brain','Интеграции','CRM-лиды','Аналитика','Команда и роли','Настройки']; export default function More(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>SINERGY SMM v1.2</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Система</Text>{rows.map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:16,borderWidth:1,borderColor:'#24352a',padding:18,marginTop:10}}><Text style={{color:'white',fontWeight:'700'}}>{x}</Text></View>)}</ScrollView>}
+          EOF
+      - name: Generate native Android project
+        working-directory: /tmp/sinergy-smm
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Build release APK
+        working-directory: /tmp/sinergy-smm/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          APK=$(find /tmp/sinergy-smm/android/app/build/outputs/apk/release -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          cp "$APK" dist/SINERGY-SMM-v1.2.0.apk
+          sha256sum dist/SINERGY-SMM-v1.2.0.apk > dist/SINERGY-SMM-v1.2.0.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v1.2.0-APK
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

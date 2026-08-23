@@ -3,6 +3,8 @@ name: Build SINERGY SMM v1.2 APK
 on:
   push:
     branches: [build-sinergy-smm-v12]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -30,22 +32,10 @@ jobs:
           rm -rf app
           mkdir -p app
           cat > app.json <<'EOF'
-          {
-            "expo": {
-              "name":"Синергия-СММ",
-              "slug":"sinergy-smm",
-              "version":"1.2.0",
-              "scheme":"sinergysmm",
-              "ios":{"bundleIdentifier":"ai.sinergy.smm"},
-              "android":{"package":"ai.sinergy.smm","versionCode":12,"adaptiveIcon":{"backgroundColor":"#080b09"}},
-              "runtimeVersion":"1.2.0",
-              "plugins":["expo-router"]
-            }
-          }
+          {"expo":{"name":"Синергия-СММ","slug":"sinergy-smm","version":"1.2.0","scheme":"sinergysmm","ios":{"bundleIdentifier":"ai.sinergy.smm"},"android":{"package":"ai.sinergy.smm","versionCode":12,"adaptiveIcon":{"backgroundColor":"#080b09"}},"runtimeVersion":"1.2.0","plugins":["expo-router"]}}
           EOF
           cat > app/_layout.tsx <<'EOF'
-          import { Tabs } from 'expo-router';
-          import { StatusBar } from 'expo-status-bar';
+          import { Tabs } from 'expo-router'; import { StatusBar } from 'expo-status-bar';
           export default function Layout(){return <><StatusBar style="light"/><Tabs screenOptions={{headerShown:false,tabBarStyle:{backgroundColor:'#0d120f',borderTopColor:'#213027'},tabBarActiveTintColor:'#60ff86',tabBarInactiveTintColor:'#77827b'}}><Tabs.Screen name="index" options={{title:'Главная'}}/><Tabs.Screen name="create" options={{title:'Создать'}}/><Tabs.Screen name="calendar" options={{title:'Календарь'}}/><Tabs.Screen name="inbox" options={{title:'Входящие'}}/><Tabs.Screen name="more" options={{title:'Ещё'}}/></Tabs></>}
           EOF
           cat > app/index.tsx <<'EOF'
@@ -55,21 +45,16 @@ jobs:
           function Metric({title,value}:{title:string,value:string}){return <View style={{flex:1,backgroundColor:'#111713',padding:18,borderRadius:18,borderWidth:1,borderColor:'#24352a'}}><Text style={{color:'#9ba7a0'}}>{title}</Text><Text style={{color:'white',fontSize:30,fontWeight:'900',marginTop:6}}>{value}</Text></View>}
           EOF
           cat > app/create.tsx <<'EOF'
-          import {ScrollView,Text,TextInput,Pressable,View} from 'react-native';
-          export default function Create(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>AI STUDIO</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Создать контент</Text><Text style={{color:'#9ba7a0',marginTop:8}}>Опиши цель — Brand Brain подготовит адаптируемый пакет для выбранных каналов.</Text><TextInput multiline placeholder="Например: рилс о новой услуге, CTA на запись..." placeholderTextColor="#657069" style={{minHeight:150,backgroundColor:'#111713',color:'white',borderWidth:1,borderColor:'#26392d',borderRadius:18,padding:16,marginTop:24,textAlignVertical:'top'}}/><View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:14}}>{['VK','Telegram','Instagram','Facebook','WhatsApp'].map(x=><View key={x} style={{borderWidth:1,borderColor:'#345440',borderRadius:14,paddingHorizontal:12,paddingVertical:8}}><Text style={{color:'#b8c3bc'}}>{x}</Text></View>)}</View><Pressable style={{backgroundColor:'#60ff86',padding:17,borderRadius:16,marginTop:20}}><Text style={{fontWeight:'900',textAlign:'center'}}>Сгенерировать с AI</Text></Pressable></ScrollView>}
+          import {ScrollView,Text,TextInput,Pressable,View} from 'react-native'; export default function Create(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>AI STUDIO</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Создать контент</Text><Text style={{color:'#9ba7a0',marginTop:8}}>Опиши цель — Brand Brain подготовит пакет для выбранных каналов.</Text><TextInput multiline placeholder="Например: рилс о новой услуге, CTA на запись..." placeholderTextColor="#657069" style={{minHeight:150,backgroundColor:'#111713',color:'white',borderWidth:1,borderColor:'#26392d',borderRadius:18,padding:16,marginTop:24,textAlignVertical:'top'}}/><View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:14}}>{['VK','Telegram','Instagram','Facebook','WhatsApp'].map(x=><View key={x} style={{borderWidth:1,borderColor:'#345440',borderRadius:14,paddingHorizontal:12,paddingVertical:8}}><Text style={{color:'#b8c3bc'}}>{x}</Text></View>)}</View><Pressable style={{backgroundColor:'#60ff86',padding:17,borderRadius:16,marginTop:20}}><Text style={{fontWeight:'900',textAlign:'center'}}>Сгенерировать с AI</Text></Pressable></ScrollView>}
           EOF
           cat > app/calendar.tsx <<'EOF'
-          import {ScrollView,Text,View} from 'react-native';
-          export default function Calendar(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>CONTENT CALENDAR</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Календарь</Text>{['Сегодня','Завтра','На этой неделе'].map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:14}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>{x}</Text><Text style={{color:'#8d9a92',marginTop:8}}>Публикаций пока нет</Text></View>)}</ScrollView>}
+          import {ScrollView,Text,View} from 'react-native'; export default function Calendar(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>CONTENT CALENDAR</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Календарь</Text>{['Сегодня','Завтра','На этой неделе'].map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:14}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>{x}</Text><Text style={{color:'#8d9a92',marginTop:8}}>Публикаций пока нет</Text></View>)}</ScrollView>}
           EOF
           cat > app/inbox.tsx <<'EOF'
-          import {ScrollView,Text,View} from 'react-native';
-          export default function Inbox(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>OMNICHANNEL INBOX</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Входящие</Text><View style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:20}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>Единый диалоговый центр</Text><Text style={{color:'#9ba7a0',marginTop:8,lineHeight:21}}>Сообщения из подключённых каналов появятся здесь. SINERGY подготовит AI-черновик ответа и создаст CRM-лид для нового диалога.</Text></View></ScrollView>}
+          import {ScrollView,Text,View} from 'react-native'; export default function Inbox(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>OMNICHANNEL INBOX</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Входящие</Text><View style={{backgroundColor:'#111713',borderRadius:20,borderWidth:1,borderColor:'#24352a',padding:20,marginTop:20}}><Text style={{color:'white',fontSize:18,fontWeight:'800'}}>Единый диалоговый центр</Text><Text style={{color:'#9ba7a0',marginTop:8,lineHeight:21}}>Сообщения из подключённых каналов появятся здесь. SINERGY подготовит AI-черновик и создаст CRM-лид.</Text></View></ScrollView>}
           EOF
           cat > app/more.tsx <<'EOF'
-          import {ScrollView,Text,View} from 'react-native';
-          const rows=['Brand Brain','Интеграции','CRM-лиды','Аналитика','Команда и роли','Настройки'];
-          export default function More(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>SINERGY SMM v1.2</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Система</Text>{rows.map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:16,borderWidth:1,borderColor:'#24352a',padding:18,marginTop:10}}><Text style={{color:'white',fontWeight:'700'}}>{x}</Text></View>)}</ScrollView>}
+          import {ScrollView,Text,View} from 'react-native'; const rows=['Brand Brain','Интеграции','CRM-лиды','Аналитика','Команда и роли','Настройки']; export default function More(){return <ScrollView style={{flex:1,backgroundColor:'#080b09'}} contentContainerStyle={{padding:24,paddingTop:64,paddingBottom:120}}><Text style={{color:'#60ff86',fontWeight:'900'}}>SINERGY SMM v1.2</Text><Text style={{color:'white',fontSize:32,fontWeight:'900',marginTop:8}}>Система</Text>{rows.map(x=><View key={x} style={{backgroundColor:'#111713',borderRadius:16,borderWidth:1,borderColor:'#24352a',padding:18,marginTop:10}}><Text style={{color:'white',fontWeight:'700'}}>{x}</Text></View>)}</ScrollView>}
           EOF
       - name: Generate native Android project
         working-directory: /tmp/sinergy-smm
@@ -86,7 +71,6 @@ jobs:
           test -n "$APK"
           cp "$APK" dist/SINERGY-SMM-v1.2.0.apk
           sha256sum dist/SINERGY-SMM-v1.2.0.apk > dist/SINERGY-SMM-v1.2.0.apk.sha256
-          ls -lh dist/
       - uses: actions/upload-artifact@v4
         with:
           name: SINERGY-SMM-v1.2.0-APK

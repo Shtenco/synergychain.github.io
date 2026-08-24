@@ -68,6 +68,10 @@ jobs:
           UNSIGNED=$(find /tmp/smm/android/app/build/outputs/apk/release -name '*.apk' | head -1)
           test -n "$UNSIGNED"
           echo "d267543357af6da3340c888e35c4917f3b9a7e036ba20ca8c40fa74d027b9b4f  $UNSIGNED" | sha256sum -c -
+          echo '92a07db86cd35c2ab8cdc5b4a073d3999c3dd0bc3a6f7f88e5357099ad898782  smm-v3-ci/signed-delta.part00' | sha256sum -c -
+          echo 'fede4f9dac8b7415c15a3a51d8736dd13e8fff7f47845aeff15f069e91c2b945  smm-v3-ci/signed-delta.part01' | sha256sum -c -
+          echo 'ca3e85bab309e5679c098ba1df7ef39a82f06125325c66207b2ef2dbcd16bba5  smm-v3-ci/signed-delta.part02' | sha256sum -c -
+          echo '43ddf1b8e43c015af61b28dd530a133dbde7f1dc8a24c8a1d8f074537561fda0  smm-v3-ci/signed-delta.part03' | sha256sum -c -
           cat smm-v3-ci/signed-delta.part00 smm-v3-ci/signed-delta.part01 smm-v3-ci/signed-delta.part02 smm-v3-ci/signed-delta.part03 > /tmp/signed-delta.b64
           base64 -d /tmp/signed-delta.b64 > /tmp/signed.delta
           echo '6562d73f6d672696e1ea55685fc200edc609536460ff6bca9d610551eb5725fe  /tmp/signed.delta' | sha256sum -c -
@@ -95,7 +99,7 @@ jobs:
           PY
           echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
           unzip -t /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk >/dev/null
-          printf 'UNSIGNED_BASE_SHA_PASS\nDELTA_SHA_PASS\nEXACT_SIGNED_APK_SHA256_PASS\n' > /tmp/signed-out/SIGNED-STATIC-GATE.txt
+          printf 'UNSIGNED_BASE_SHA_PASS\nDELTA_PARTS_SHA_PASS\nDELTA_SHA_PASS\nEXACT_SIGNED_APK_SHA256_PASS\n' > /tmp/signed-out/SIGNED-STATIC-GATE.txt
       - name: Enable KVM acceleration
         shell: bash
         run: |

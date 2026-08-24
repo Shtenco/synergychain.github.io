@@ -1,0 +1,71 @@
+name: SINERGY SMM v3 Signed APK Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Download exact signed production APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/signed-out
+          URL='https://drive.usercontent.google.com/download?id=1Q7dc_SotUDgT_LbIvBOGzpQBugA8J5Rh&export=download&confirm=t'
+          curl -fL --retry 3 --retry-delay 2 "$URL" -o /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+          echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
+          unzip -t /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk >/dev/null
+          printf 'EXACT_SIGNED_APK_SHA256_PASS\n' > /tmp/signed-out/SIGNED-STATIC-GATE.txt
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          fi
+      - name: Signed release install/launch/back/restart
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb logcat -c
+            adb install -r /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk | tee /tmp/signed-out/SIGNED-ADB-INSTALL.txt
+            grep -q 'Success' /tmp/signed-out/SIGNED-ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/signed-out/SIGNED-ADB-LAUNCH.txt
+            sleep 5
+            adb logcat -d > /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            adb shell dumpsys activity activities | grep -q 'ai.sinergy.smm/ai.sinergy.smm.MainActivity'
+            adb exec-out screencap -p > /tmp/signed-out/SIGNED-ANDROID-HOME.png
+            test -s /tmp/signed-out/SIGNED-ANDROID-HOME.png
+            adb shell input keyevent 4
+            sleep 1
+            adb shell am force-stop ai.sinergy.smm
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity > /tmp/signed-out/SIGNED-ADB-RESTART.txt
+            sleep 4
+            adb logcat -d > /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/signed-out/SIGNED-ANDROID-RESTART.png
+            test -s /tmp/signed-out/SIGNED-ANDROID-RESTART.png
+            printf 'SIGNED_ADB_INSTALL_PASS\nSIGNED_FIRST_FRAME_HOME_PASS\nSIGNED_ANDROID_SCREENSHOT_PASS\nSIGNED_BACK_RESTART_PASS\n' > /tmp/signed-out/SIGNED-ANDROID-SMOKE-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-SIGNED-RUNTIME-EVIDENCE
+          path: /tmp/signed-out/*
+          if-no-files-found: error
+          retention-days: 30

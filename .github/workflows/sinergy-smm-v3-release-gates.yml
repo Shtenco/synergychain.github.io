@@ -3,6 +3,8 @@ name: SINERGY SMM v3 Release Gates
 on:
   push:
     branches: [sinergy-smm-v3-release-gates]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

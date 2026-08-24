@@ -20,7 +20,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat smm-v3-ci/runtime_noicons.part00 smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b smm-v3-ci/runtime_fix.part02 smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
+          echo '767458314b952d2fc44a2289f9e139550f9d0f61035dd5b54c226721034c5847  smm-v3-ci/runtime_noicons.part00' | sha256sum -c -
+          cat smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b > /tmp/part01
+          echo 'd9eec4f6da1036751f52d177827f6a5a06dd7ba48d1731a52e823ca98ae98aba  /tmp/part01' | sha256sum -c -
+          echo '646497e83b6c6d17d9a10ce392d78ca2fe256190ec00c9fd810873c5fd0fef15  smm-v3-ci/runtime_fix.part02' | sha256sum -c -
+          echo 'e8e6f6509b539823cdb2f14cd7ce78d2012ed30d8294ee9f7d7246d9d2df0bc7  smm-v3-ci/runtime_fix.part03' | sha256sum -c -
+          cat smm-v3-ci/runtime_noicons.part00 /tmp/part01 smm-v3-ci/runtime_fix.part02 smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
           base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
           echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
           mkdir -p /tmp/smm
@@ -63,7 +68,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat smm-v3-ci/runtime_noicons.part00 smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b smm-v3-ci/runtime_fix.part02 smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
+          echo '767458314b952d2fc44a2289f9e139550f9d0f61035dd5b54c226721034c5847  smm-v3-ci/runtime_noicons.part00' | sha256sum -c -
+          cat smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b > /tmp/part01
+          echo 'd9eec4f6da1036751f52d177827f6a5a06dd7ba48d1731a52e823ca98ae98aba  /tmp/part01' | sha256sum -c -
+          echo '646497e83b6c6d17d9a10ce392d78ca2fe256190ec00c9fd810873c5fd0fef15  smm-v3-ci/runtime_fix.part02' | sha256sum -c -
+          echo 'e8e6f6509b539823cdb2f14cd7ce78d2012ed30d8294ee9f7d7246d9d2df0bc7  smm-v3-ci/runtime_fix.part03' | sha256sum -c -
+          cat smm-v3-ci/runtime_noicons.part00 /tmp/part01 smm-v3-ci/runtime_fix.part02 smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
           base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
           echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
           mkdir -p /tmp/smm

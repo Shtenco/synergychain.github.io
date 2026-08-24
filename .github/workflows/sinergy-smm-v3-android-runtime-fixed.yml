@@ -89,10 +89,8 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           script: |
-            set -eu
-            APK=/tmp/out/SINERGY-SMM-v3.0.0-debug.apk
             adb logcat -c
-            adb install -r "$APK" | tee /tmp/out/ADB-INSTALL.txt
+            adb install -r /tmp/out/SINERGY-SMM-v3.0.0-debug.apk | tee /tmp/out/ADB-INSTALL.txt
             grep -q 'Success' /tmp/out/ADB-INSTALL.txt
             adb shell am start -W -n ai.sinergy.smm.debug/ai.sinergy.smm.MainActivity | tee /tmp/out/ADB-LAUNCH.txt
             sleep 5

@@ -73,8 +73,11 @@ jobs:
           echo '286fe65cb7cbf012c2b8edf435f200adcba2c49dcdf1cd604670c7eaaf724220  smm-v3-ci/signed-delta.part02a' | sha256sum -c -
           echo '77ebf928d1786293d285256242ee9f0bf33e85ac3a1d222fcbf6bc3379c787bd  smm-v3-ci/signed-delta.part02b1' | sha256sum -c -
           echo '23c8cb1a8a43e8a31f20117720e078bb3c35f37c180e95ea44d8c818ee58251d  smm-v3-ci/signed-delta.part02b2' | sha256sum -c -
-          echo '43ddf1b8e43c015af61b28dd530a133dbde7f1dc8a24c8a1d8f074537561fda0  smm-v3-ci/signed-delta.part03' | sha256sum -c -
-          cat smm-v3-ci/signed-delta.part00 smm-v3-ci/signed-delta.part01 smm-v3-ci/signed-delta.part02a smm-v3-ci/signed-delta.part02b1 smm-v3-ci/signed-delta.part02b2 smm-v3-ci/signed-delta.part03 > /tmp/signed-delta.b64
+          echo '3e9a8f009777fdcfd5c72c899cc45363732f0120eeb36ab265f3844cf78b7637  smm-v3-ci/signed-delta.part03a' | sha256sum -c -
+          echo 'def61e45f26b69ad0e77bba63a8d1b667b3f4b5ba233f0c4159329d5ef978b23  smm-v3-ci/signed-delta.part03b' | sha256sum -c -
+          echo '67fdf83d94b23a18397c3d1c11a886a6fcfb013b1af5f923a2f5b0886ca02edd  smm-v3-ci/signed-delta.part03c' | sha256sum -c -
+          echo 'e0b4bdefbf3a5101df05fe4a73267cb709a39005b8148fc09f3e279885a5c048  smm-v3-ci/signed-delta.part03d' | sha256sum -c -
+          cat smm-v3-ci/signed-delta.part00 smm-v3-ci/signed-delta.part01 smm-v3-ci/signed-delta.part02a smm-v3-ci/signed-delta.part02b1 smm-v3-ci/signed-delta.part02b2 smm-v3-ci/signed-delta.part03a smm-v3-ci/signed-delta.part03b smm-v3-ci/signed-delta.part03c smm-v3-ci/signed-delta.part03d > /tmp/signed-delta.b64
           base64 -d /tmp/signed-delta.b64 > /tmp/signed.delta
           echo '6562d73f6d672696e1ea55685fc200edc609536460ff6bca9d610551eb5725fe  /tmp/signed.delta' | sha256sum -c -
           python - "$UNSIGNED" /tmp/signed.delta /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk <<'PY'

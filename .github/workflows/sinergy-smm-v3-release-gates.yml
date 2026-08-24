@@ -1,0 +1,133 @@
+name: SINERGY SMM v3 Release Gates
+
+on:
+  push:
+    branches: [sinergy-smm-v3-release-gates]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore exact v3 runtime source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat smm-v3-ci/runtime_noicons.part00 smm-v3-ci/runtime_noicons.part01 smm-v3-ci/runtime_noicons.part02 smm-v3-ci/runtime_noicons.part03 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
+          echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
+          mkdir -p /tmp/smm
+          tar -xzf /tmp/runtime.tar.gz -C /tmp/smm --strip-components=1
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          sed -i "s#executable_path='/usr/bin/chromium',##" /tmp/smm/tests/web/e2e.py
+      - name: Web E2E + 72 screenshots
+        working-directory: /tmp/smm
+        run: |
+          python tests/web/e2e.py | tee /tmp/WEB-E2E.txt
+          grep -q 'WEB_E2E_PASS routes=12 screenshots=72' /tmp/WEB-E2E.txt
+          test "$(find SCREENSHOTS -name '*.png' | wc -l)" -eq 72
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-WEB-E2E
+          path: |
+            /tmp/smm/SCREENSHOTS/*.png
+            /tmp/WEB-E2E.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  android-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore exact v3 runtime source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat smm-v3-ci/runtime_noicons.part00 smm-v3-ci/runtime_noicons.part01 smm-v3-ci/runtime_noicons.part02 smm-v3-ci/runtime_noicons.part03 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
+          echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
+          mkdir -p /tmp/smm
+          tar -xzf /tmp/runtime.tar.gz -C /tmp/smm --strip-components=1
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "/tmp/smm/android/app/src/main/res/mipmap-$d"
+            cp smm-v2-branding/sinergy-logo.png "/tmp/smm/android/app/src/main/res/mipmap-$d/ic_launcher.png"
+            cp smm-v2-branding/sinergy-logo.png "/tmp/smm/android/app/src/main/res/mipmap-$d/ic_launcher_round.png"
+          done
+      - name: Install Android SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build debug and unsigned release from source
+        working-directory: /tmp/smm/android
+        run: gradle --no-daemon clean :app:assembleDebug :app:assembleRelease
+      - name: Static APK gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEBUG_APK=$(find /tmp/smm/android/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          RELEASE_APK=$(find /tmp/smm/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$DEBUG_APK"; test -n "$RELEASE_APK"
+          unzip -t "$DEBUG_APK" >/dev/null
+          unzip -t "$RELEASE_APK" >/dev/null
+          unzip -l "$RELEASE_APK" | grep -q 'assets/www/index.html'
+          unzip -l "$RELEASE_APK" | grep -q 'assets/www/js/app.js'
+          unzip -l "$RELEASE_APK" | grep -q 'assets/www/css/app.css'
+          ! unzip -l "$RELEASE_APK" | grep -Eqi 'wallet|nexus|\.p12|KEY_PASSWORD|session\.session|\.sqlite'
+          mkdir -p /tmp/out
+          cp "$DEBUG_APK" /tmp/out/SINERGY-SMM-v3.0.0-debug.apk
+          cp "$RELEASE_APK" /tmp/out/SINERGY-SMM-v3.0.0-unsigned-release.apk
+          sha256sum /tmp/out/*.apk > /tmp/out/SHA256SUMS.txt
+      - name: Android emulator install/launch/back/restart
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK=/tmp/out/SINERGY-SMM-v3.0.0-debug.apk
+            adb logcat -c
+            adb install -r "$APK" | tee /tmp/out/ADB-INSTALL.txt
+            grep -q 'Success' /tmp/out/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.debug/ai.sinergy.smm.MainActivity | tee /tmp/out/ADB-LAUNCH.txt
+            sleep 5
+            adb logcat -d > /tmp/out/LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/out/LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/out/LOGCAT-FIRST.txt
+            adb shell dumpsys activity activities | grep -q 'ai.sinergy.smm.debug/ai.sinergy.smm.MainActivity'
+            adb exec-out screencap -p > /tmp/out/ANDROID-HOME.png
+            test -s /tmp/out/ANDROID-HOME.png
+            adb shell input keyevent 4
+            sleep 1
+            adb shell am force-stop ai.sinergy.smm.debug
+            adb shell am start -W -n ai.sinergy.smm.debug/ai.sinergy.smm.MainActivity > /tmp/out/ADB-RESTART.txt
+            sleep 4
+            adb logcat -d > /tmp/out/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/out/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/out/LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/out/ANDROID-RESTART.png
+            test -s /tmp/out/ANDROID-RESTART.png
+            printf 'ANDROID_RUNTIME_PASS\n' > /tmp/out/ANDROID-SMOKE-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-ANDROID-RUNTIME
+          path: /tmp/out/*
+          if-no-files-found: error
+          retention-days: 30

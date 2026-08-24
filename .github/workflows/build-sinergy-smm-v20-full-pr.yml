@@ -55,7 +55,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/smm-v2-branding/sinergy-logo.png" "$ROOT/icons/sinergy-logo.png"
           cp "$GITHUB_WORKSPACE/smm-v2-branding/sinergy-logo.png" "$APP/src/main/res/drawable/sinergy_logo.png"
           ACTUAL=$(sha256sum "$ROOT/icons/sinergy-logo.png" | awk '{print $1}')
-          test "$ACTUAL" = "28eeefc12e9e0ca5e514cf94938854e798f12674c2f6b9a00bd1a6b571fa8c0"
+          test "$ACTUAL" = "28eeefc12e9e0ca5e514cf94938854e798f12674c2f6b9a00bd1a6b571fa8c0f"
           python3 - <<'PY'
           from pathlib import Path
           import re

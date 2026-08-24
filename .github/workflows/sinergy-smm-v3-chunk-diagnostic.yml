@@ -1,0 +1,27 @@
+name: SINERGY SMM v3 Chunk Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chunks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact chunk halves
+        shell: bash
+        run: |
+          set -euo pipefail
+          wc -c smm-v3-ci/runtime_noicons.part00 smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b smm-v3-ci/runtime_fix.part02a smm-v3-ci/runtime_fix.part02b smm-v3-ci/runtime_fix.part03
+          echo '767458314b952d2fc44a2289f9e139550f9d0f61035dd5b54c226721034c5847  smm-v3-ci/runtime_noicons.part00' | sha256sum -c -
+          echo '165bc281ff2ecbb157b4a37aa2aa741048151dbf7bbb4ad78356b37c191715ba  smm-v3-ci/runtime_fix.part01a' | sha256sum -c -
+          echo 'da2a52cbc999d1a56f5fc7c8d51145494516d23e45423ec1b8394ec07a3e87b5  smm-v3-ci/runtime_fix.part01b' | sha256sum -c -
+          echo '773eebc12f958698c1be6a43032b5f9d231b777329ef1d9b55234e67542ff7d2  smm-v3-ci/runtime_fix.part02a' | sha256sum -c -
+          echo '662343f684f6a97661bc7439d045b75a5df90ff3d82e75073eac1b2f056addf9  smm-v3-ci/runtime_fix.part02b' | sha256sum -c -
+          echo 'e8e6f6509b539823cdb2f14cd7ce78d2012ed30d8294ee9f7d7246d9d2df0bc7  smm-v3-ci/runtime_fix.part03' | sha256sum -c -
+          echo CHUNK_DIAGNOSTIC_PASS

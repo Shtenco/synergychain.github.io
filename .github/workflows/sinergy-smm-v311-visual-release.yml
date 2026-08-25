@@ -1,0 +1,161 @@
+name: SINERGY SMM v3.1.1 Canonical Visual Release
+
+on:
+  push:
+    branches: [sinergy-smm-v3-product-v31-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  v311-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download v3.1.0 canonical identity and source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v310 /tmp/smm-v311 /tmp/v311-evidence
+          mkdir -p /tmp/v310 /tmp/smm-v311 /tmp/v311-evidence
+          gh run download 32895236017 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.1-PRO-CANONICAL-PRESIGN --dir /tmp/v310
+          echo 'afefce4768432d5b7fe3a8dc5b6871eabf6f14d4ac39f109db0255aa45c923cb  /tmp/v310/SINERGY-SMM-RELEASE-2026-CANONICAL.jks' | sha256sum -c -
+          echo '204bb95168b7bb5b9b5fcb8b0b4e02cbc42f275f48baf8b5cc04366f1080678c  /tmp/v310/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v310/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz -C /tmp/smm-v311
+          cp /tmp/v310/SINERGY-SMM-RELEASE-2026-CANONICAL.jks /tmp/v311-evidence/
+          cp /tmp/v310/RECOVERY.txt /tmp/v311-evidence/
+
+      - name: Apply v3.1.1 visual runtime patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          SMM_SRC=/tmp/smm-v311 python smm-v3-product-v31/visual_runtime_fix_v311.py
+          grep -q "versionCode 311" /tmp/smm-v311/android/app/build.gradle
+          grep -q "versionName '3.1.1'" /tmp/smm-v311/android/app/build.gradle
+          grep -q 'LAYER_TYPE_SOFTWARE' /tmp/smm-v311/android/app/src/main/java/ai/sinergy/smm/MainActivity.java
+          grep -q 'EMULATOR_SOFTWARE_WEBVIEW' /tmp/smm-v311/android/app/src/main/java/ai/sinergy/smm/MainActivity.java
+          python /tmp/smm-v311/tests/backend/contract_test.py
+          test "$(python - <<'PY'
+          import json
+          r=json.load(open('/tmp/smm-v311/backend/action_registry.json'))
+          print(len(r))
+          PY
+          )" -eq 77
+
+      - name: Re-run browser E2E unchanged web product
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet playwright
+          if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          python /tmp/smm-v311/tests/web/e2e.py
+          test "$(find /tmp/smm-v311/SCREENSHOTS -name '*.png' | wc -l)" -eq 78
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Build v3.1.1 unsigned release
+        working-directory: /tmp/smm-v311/android
+        run: gradle --no-daemon clean :app:assembleRelease
+
+      - name: Sign v3.1.1 with canonical v3.1.0 key
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS=$(sed -n 's/^Store password: //p' /tmp/v310/RECOVERY.txt | head -1)
+          test -n "$PASS"
+          UNSIGNED=$(find /tmp/smm-v311/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -s "$UNSIGNED"
+          zipalign -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
+          apksigner sign --ks /tmp/v310/SINERGY-SMM-RELEASE-2026-CANONICAL.jks --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
+          apksigner verify --verbose --print-certs /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/APKSIGNER-VERIFY.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/v311-evidence/APKSIGNER-VERIFY.txt
+          grep -qi '53b5a94f8cd794a849ce51277a95a1c1a6be24c56537b66239e7a0b00faef85b' /tmp/v311-evidence/APKSIGNER-VERIFY.txt
+          aapt2 dump badging /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/AAPT-BADGING.txt
+          grep -q "package: name='ai.sinergy.smm.pro' versionCode='311' versionName='3.1.1'" /tmp/v311-evidence/AAPT-BADGING.txt
+          for f in $(unzip -Z1 /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | grep -E '^res/[^/]+\.png$'); do h=$(unzip -p /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk "$f" | sha256sum | awk '{print $1}'); if [ "$h" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' ]; then echo "$f $h"; fi; done | tee /tmp/v311-evidence/PACKAGED-FINANCE-ICONS.txt
+          test "$(grep -c '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' /tmp/v311-evidence/PACKAGED-FINANCE-ICONS.txt)" -ge 5
+          tar --exclude='SCREENSHOTS' --exclude='__pycache__' -czf /tmp/v311-evidence/SINERGY-SMM-v3.1.1-CANONICAL-SOURCE.tar.gz -C /tmp/smm-v311 .
+          sha256sum /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk /tmp/v311-evidence/SINERGY-SMM-v3.1.1-CANONICAL-SOURCE.tar.gz /tmp/v311-evidence/SINERGY-SMM-RELEASE-2026-CANONICAL.jks > /tmp/v311-evidence/SHA256SUMS.txt
+          printf 'VERSION_311_PASS\nREGISTRY_77_PASS\nBACKEND_9_PASS\nWEB_E2E_13_78_PASS\nGRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_PRO_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v311-evidence/STATIC-GATES.txt
+
+      - name: Create visual screenshot validator
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          cat > /tmp/check_visual.py <<'PY'
+          import sys
+          from PIL import Image, ImageStat
+          p=sys.argv[1]
+          im=Image.open(p).convert('RGB')
+          w,h=im.size
+          crop=im.crop((0,max(100,int(h*.06)),w,min(h-120,int(h*.94))))
+          pix=list(crop.getdata())
+          nonblack=sum(1 for r,g,b in pix if max(r,g,b)>30)/len(pix)
+          bright=sum(1 for r,g,b in pix if max(r,g,b)>80)/len(pix)
+          std=max(ImageStat.Stat(crop).stddev)
+          print(f'VISUAL_METRICS nonblack={nonblack:.6f} bright={bright:.6f} std={std:.3f}')
+          assert nonblack > 0.01, 'central app area is effectively black'
+          assert bright > 0.002, 'no visible UI highlights/text detected'
+          assert std > 3.0, 'central app area lacks visual structure'
+          PY
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 signed visual runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb logcat -c
+            adb install -r /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/ADB-INSTALL.txt
+            grep -q Success /tmp/v311-evidence/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v311-evidence/ADB-LAUNCH.txt
+            sleep 7
+            adb logcat -d > /tmp/v311-evidence/LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*EMULATOR_SOFTWARE_WEBVIEW' /tmp/v311-evidence/LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v311-evidence/LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/v311-evidence/LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/v311-evidence/LOGCAT-FIRST.txt
+            adb exec-out screencap -p > /tmp/v311-evidence/ANDROID-HOME.png
+            python /tmp/check_visual.py /tmp/v311-evidence/ANDROID-HOME.png | tee /tmp/v311-evidence/VISUAL-HOME.txt
+            adb shell input keyevent 4
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v311-evidence/ADB-RESTART.txt
+            sleep 6
+            adb logcat -d > /tmp/v311-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v311-evidence/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/v311-evidence/LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/v311-evidence/ANDROID-RESTART.png
+            python /tmp/check_visual.py /tmp/v311-evidence/ANDROID-RESTART.png | tee /tmp/v311-evidence/VISUAL-RESTART.txt
+            printf 'SIGNED_ADB_INSTALL_PASS\nSIGNED_FIRST_FRAME_HOME_PASS\nSIGNED_VISUAL_NONBLACK_PASS\nSIGNED_BACK_RESTART_PASS\n' > /tmp/v311-evidence/RUNTIME-GATES.txt
+
+      - name: Upload v3.1.1 canonical release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.1.1-PRO-CANONICAL-RELEASE
+          path: /tmp/v311-evidence/*
+          if-no-files-found: error
+          retention-days: 3

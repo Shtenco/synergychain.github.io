@@ -1,0 +1,113 @@
+name: SINERGY SMM v3 Final Crypto Audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-crypto-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: android-actions/setup-android@v3
+      - name: Install Android build tools 36
+        run: sdkmanager 'build-tools;36.0.0'
+      - name: Fetch exact proven signed runtime and strict visual evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/final/runtime /tmp/final/strict /tmp/final/out
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Shtenco/synergychain.github.io/actions/artifacts/9558314744/zip \
+            -o /tmp/final/runtime.zip
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Shtenco/synergychain.github.io/actions/artifacts/9558275291/zip \
+            -o /tmp/final/strict.zip
+          unzip -q /tmp/final/runtime.zip -d /tmp/final/runtime
+          unzip -q /tmp/final/strict.zip -d /tmp/final/strict
+          RUNTIME_APK=/tmp/final/runtime/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+          STRICT_APK=/tmp/final/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+          test -s "$RUNTIME_APK"
+          test -s "$STRICT_APK"
+          echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/final/runtime/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
+          echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/final/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
+          cmp "$RUNTIME_APK" "$STRICT_APK"
+          grep -qx 'SIGNED_ADB_INSTALL_PASS' /tmp/final/runtime/SIGNED-ANDROID-SMOKE-TEST.txt
+          grep -qx 'SIGNED_FIRST_FRAME_HOME_PASS' /tmp/final/runtime/SIGNED-ANDROID-SMOKE-TEST.txt
+          grep -qx 'SIGNED_ANDROID_SCREENSHOT_PASS' /tmp/final/runtime/SIGNED-ANDROID-SMOKE-TEST.txt
+          grep -qx 'SIGNED_BACK_RESTART_PASS' /tmp/final/runtime/SIGNED-ANDROID-SMOKE-TEST.txt
+          grep -qx 'EXACT_SIGNED_SHA_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          grep -qx 'SIGNED_INSTALL_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          grep -qx 'SIGNED_FIRST_FRAME_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          grep -qx 'PAGE_FINISHED_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          grep -qx 'FOCUSED_WINDOW_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          grep -qx 'SIGNED_RESTART_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
+          cp "$RUNTIME_APK" /tmp/final/out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+      - name: Persistent signer, APK Signature v2, 16-KiB and fingerprint gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/final/out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -Fq 'Number of signers: 1' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -Fiq 'Signer #1 certificate DN: CN=SINERGY Persistent Release 2026, OU=Android Release, O=SINERGY, C=KZ' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -Fiq 'Signer #1 certificate SHA-256 digest: d0036c6bb3c9e56414f354256bd06bb32e2c29623ca9963437254695696d62d8' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -F 'Verified using v1 scheme (JAR signing):' /tmp/final/out/APKSIGNER-VERIFY.txt > /tmp/final/out/APK-V1-STATUS.txt
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" | tee /tmp/final/out/ZIPALIGN-16K.txt
+          if unzip -Z1 "$APK" | grep -Eq '^lib/.+\.so$'; then
+            echo 'Unexpected native .so payload: dedicated ELF 16-KiB audit required' >&2
+            exit 1
+          fi
+          python - "$APK" <<'PY' | tee /tmp/final/out/APK-SIGNING-BLOCK.txt
+          import pathlib, struct, sys
+          data=pathlib.Path(sys.argv[1]).read_bytes()
+          eocd=data.rfind(b'PK\x05\x06')
+          assert eocd >= 0
+          cd=struct.unpack_from('<I', data, eocd+16)[0]
+          assert data[cd-16:cd] == b'APK Sig Block 42'
+          footer=struct.unpack_from('<Q', data, cd-24)[0]
+          start=cd-(footer+8)
+          assert struct.unpack_from('<Q', data, start)[0] == footer
+          q=start+8; end=cd-24; ids=[]
+          while q < end:
+              n=struct.unpack_from('<Q', data, q)[0]; q += 8
+              ident=struct.unpack_from('<I', data, q)[0]; q += 4
+              ids.append(ident); q += n-4
+          assert q == end
+          assert 0x7109871A in ids
+          print('APK_SIG_BLOCK_PASS')
+          print('APK_V2_BLOCK_PASS')
+          print('APK_SIG_BLOCK_BYTES', footer+8)
+          PY
+          cat > /tmp/final/out/FINAL-CRYPTO-AUDIT.txt <<'EOF'
+          EXACT_SIGNED_APK_SHA256_PASS
+          RUNTIME_EVIDENCE_PASS
+          STRICT_FOCUSED_WINDOW_EVIDENCE_PASS
+          PERSISTENT_SIGNING_IDENTITY_PASS
+          CERT_SHA256_FINGERPRINT_PASS
+          SINGLE_SIGNER_PASS
+          APK_SIGNATURE_V2_PASS
+          ZIPALIGN_16K_PASS
+          NO_NATIVE_SO_PASS
+          FINAL_AUDIT_PASS
+          EOF
+          cat /tmp/final/out/FINAL-CRYPTO-AUDIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-FINAL-CRYPTO-AUDIT
+          path: /tmp/final/out/*
+          if-no-files-found: error
+          retention-days: 30

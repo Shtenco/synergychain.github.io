@@ -1,0 +1,87 @@
+name: SINERGY SMM v3 Signed Visual Strict
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  signed-visual-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: android-actions/setup-android@v3
+      - name: Fetch exact signed APK from proven runtime artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/strict
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Shtenco/synergychain.github.io/actions/artifacts/9542092959/zip \
+            -o /tmp/strict/evidence.zip
+          unzip -q /tmp/strict/evidence.zip -d /tmp/strict/evidence
+          cp /tmp/strict/evidence/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk /tmp/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
+          echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          fi
+      - name: Strict focused-window visual smoke
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            set -eu
+            adb shell settings put global hide_error_dialogs 1 || true
+            adb shell am force-stop com.android.launcher3 || true
+            adb shell pm disable-user --user 0 com.android.launcher3 || true
+            adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+            adb install -r /tmp/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk | tee /tmp/strict/STRICT-ADB-INSTALL.txt
+            grep -q 'Success' /tmp/strict/STRICT-ADB-INSTALL.txt
+            adb logcat -c
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/strict/STRICT-ADB-LAUNCH.txt
+            sleep 10
+            adb logcat -d > /tmp/strict/STRICT-LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/strict/STRICT-LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' /tmp/strict/STRICT-LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION.*ai\.sinergy\.smm|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/strict/STRICT-LOGCAT-FIRST.txt
+            adb shell dumpsys window > /tmp/strict/STRICT-WINDOW-FIRST.txt
+            grep -E 'mCurrentFocus|mFocusedApp' /tmp/strict/STRICT-WINDOW-FIRST.txt | tee /tmp/strict/STRICT-FOCUS-FIRST.txt
+            grep -Eq 'm(CurrentFocus|FocusedApp).*ai\.sinergy\.smm/.+MainActivity' /tmp/strict/STRICT-FOCUS-FIRST.txt
+            adb exec-out screencap -p > /tmp/strict/STRICT-SIGNED-HOME.png
+            test -s /tmp/strict/STRICT-SIGNED-HOME.png
+            adb shell am force-stop ai.sinergy.smm
+            adb logcat -c
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/strict/STRICT-ADB-RESTART.txt
+            sleep 10
+            adb logcat -d > /tmp/strict/STRICT-LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/strict/STRICT-LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' /tmp/strict/STRICT-LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION.*ai\.sinergy\.smm|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/strict/STRICT-LOGCAT-RESTART.txt
+            adb shell dumpsys window > /tmp/strict/STRICT-WINDOW-RESTART.txt
+            grep -E 'mCurrentFocus|mFocusedApp' /tmp/strict/STRICT-WINDOW-RESTART.txt | tee /tmp/strict/STRICT-FOCUS-RESTART.txt
+            grep -Eq 'm(CurrentFocus|FocusedApp).*ai\.sinergy\.smm/.+MainActivity' /tmp/strict/STRICT-FOCUS-RESTART.txt
+            adb exec-out screencap -p > /tmp/strict/STRICT-SIGNED-RESTART.png
+            test -s /tmp/strict/STRICT-SIGNED-RESTART.png
+            printf 'EXACT_SIGNED_SHA_PASS\nSIGNED_INSTALL_PASS\nSIGNED_FIRST_FRAME_PASS\nPAGE_FINISHED_PASS\nFOCUSED_WINDOW_PASS\nSIGNED_RESTART_PASS\n' > /tmp/strict/STRICT-SIGNED-VISUAL-GATE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-SIGNED-VISUAL-STRICT
+          path: /tmp/strict/*
+          if-no-files-found: error
+          retention-days: 30

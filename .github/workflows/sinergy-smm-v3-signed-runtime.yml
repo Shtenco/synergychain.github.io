@@ -1,0 +1,151 @@
+name: SINERGY SMM v3 Signed APK Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Restore exact v3 runtime source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '767458314b952d2fc44a2289f9e139550f9d0f61035dd5b54c226721034c5847  smm-v3-ci/runtime_noicons.part00' | sha256sum -c -
+          cat smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b > /tmp/part01
+          echo 'd9eec4f6da1036751f52d177827f6a5a06dd7ba48d1731a52e823ca98ae98aba  /tmp/part01' | sha256sum -c -
+          echo '646497e83b6c6d17d9a10ce392d78ca2fe256190ec00c9fd810873c5fd0fef15  smm-v3-ci/runtime_fix.part02a' | sha256sum -c -
+          echo 'e8e6f6509b539823cdb2f14cd7ce78d2012ed30d8294ee9f7d7246d9d2df0bc7  smm-v3-ci/runtime_fix.part03' | sha256sum -c -
+          cat smm-v3-ci/runtime_noicons.part00 /tmp/part01 smm-v3-ci/runtime_fix.part02a smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
+          echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
+          mkdir -p /tmp/smm
+          tar -xzf /tmp/runtime.tar.gz -C /tmp/smm --strip-components=1
+      - name: Apply audited BuildConfig and Finance launcher fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/smm/android/app/build.gradle')
+          s=p.read_text()
+          if 'buildConfig true' not in s:
+              s=s.replace('    compileSdk 36\n','    compileSdk 36\n    buildFeatures {\n        buildConfig true\n    }\n',1)
+          p.write_text(s)
+          assert 'buildConfig true' in p.read_text()
+          PY
+          test "$(sha256sum /tmp/smm/android/app/build.gradle | awk '{print $1}')" = '098c0c650f6b1981a88fbd268c233ecdc0b5dd24e120485de82cc6e88592094e'
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "/tmp/smm/android/app/src/main/res/mipmap-$d"
+            cp smm-v3-ci/finance-launcher.png "/tmp/smm/android/app/src/main/res/mipmap-$d/ic_launcher.png"
+            cp smm-v3-ci/finance-launcher.png "/tmp/smm/android/app/src/main/res/mipmap-$d/ic_launcher_round.png"
+          done
+      - name: Install Android SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build exact unsigned release base
+        working-directory: /tmp/smm/android
+        run: gradle --no-daemon clean :app:assembleRelease
+      - name: Reconstruct exact persistent-signed production APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/signed-out
+          UNSIGNED=$(find /tmp/smm/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -n "$UNSIGNED"
+          echo "d267543357af6da3340c888e35c4917f3b9a7e036ba20ca8c40fa74d027b9b4f  $UNSIGNED" | sha256sum -c -
+          echo '92a07db86cd35c2ab8cdc5b4a073d3999c3dd0bc3a6f7f88e5357099ad898782  smm-v3-ci/signed-delta.part00' | sha256sum -c -
+          echo 'fede4f9dac8b7415c15a3a51d8736dd13e8fff7f47845aeff15f069e91c2b945  smm-v3-ci/signed-delta.part01' | sha256sum -c -
+          echo '286fe65cb7cbf012c2b8edf435f200adcba2c49dcdf1cd604670c7eaaf724220  smm-v3-ci/signed-delta.part02a' | sha256sum -c -
+          echo '77ebf928d1786293d285256242ee9f0bf33e85ac3a1d222fcbf6bc3379c787bd  smm-v3-ci/signed-delta.part02b1' | sha256sum -c -
+          echo '23c8cb1a8a43e8a31f20117720e078bb3c35f37c180e95ea44d8c818ee58251d  smm-v3-ci/signed-delta.part02b2' | sha256sum -c -
+          echo '3e9a8f009777fdcfd5c72c899cc45363732f0120eeb36ab265f3844cf78b7637  smm-v3-ci/signed-delta.part03a' | sha256sum -c -
+          echo 'def61e45f26b69ad0e77bba63a8d1b667b3f4b5ba233f0c4159329d5ef978b23  smm-v3-ci/signed-delta.part03b' | sha256sum -c -
+          echo '67fdf83d94b23a18397c3d1c11a886a6fcfb013b1af5f923a2f5b0886ca02edd  smm-v3-ci/signed-delta.part03c' | sha256sum -c -
+          echo 'e0b4bdefbf3a5101df05fe4a73267cb709a39005b8148fc09f3e279885a5c048  smm-v3-ci/signed-delta.part03d' | sha256sum -c -
+          cat smm-v3-ci/signed-delta.part00 smm-v3-ci/signed-delta.part01 smm-v3-ci/signed-delta.part02a smm-v3-ci/signed-delta.part02b1 smm-v3-ci/signed-delta.part02b2 smm-v3-ci/signed-delta.part03a smm-v3-ci/signed-delta.part03b smm-v3-ci/signed-delta.part03c smm-v3-ci/signed-delta.part03d > /tmp/signed-delta.b64
+          base64 -d /tmp/signed-delta.b64 > /tmp/signed.delta
+          echo '6562d73f6d672696e1ea55685fc200edc609536460ff6bca9d610551eb5725fe  /tmp/signed.delta' | sha256sum -c -
+          python - "$UNSIGNED" /tmp/signed.delta /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk <<'PY'
+          import struct, pathlib, sys
+          base=pathlib.Path(sys.argv[1]).read_bytes()
+          d=pathlib.Path(sys.argv[2]).read_bytes()
+          assert d[:5] == b'SDLT1'
+          p=5
+          count=struct.unpack_from('<I',d,p)[0]; p+=4
+          out=bytearray()
+          for _ in range(count):
+              typ=d[p:p+1]; p+=1
+              if typ == b'C':
+                  off,n=struct.unpack_from('<II',d,p); p+=8
+                  out += base[off:off+n]
+              elif typ == b'L':
+                  n=struct.unpack_from('<I',d,p)[0]; p+=4
+                  out += d[p:p+n]; p+=n
+              else:
+                  raise RuntimeError(f'unknown delta op {typ!r}')
+          assert p == len(d)
+          pathlib.Path(sys.argv[3]).write_bytes(out)
+          print('DELTA_RECONSTRUCT_OK', len(out), 'ops', count)
+          PY
+          echo '4944946b18376fc4948a2b0380e1985d89a9c371b8c9e084b093615826ad275b  /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk' | sha256sum -c -
+          unzip -t /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk >/dev/null
+          printf 'UNSIGNED_BASE_SHA_PASS\nDELTA_PARTS_SHA_PASS\nDELTA_SHA_PASS\nEXACT_SIGNED_APK_SHA256_PASS\n' > /tmp/signed-out/SIGNED-STATIC-GATE.txt
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          fi
+      - name: Signed release install/launch/back/restart
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb logcat -c
+            adb install -r /tmp/signed-out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk | tee /tmp/signed-out/SIGNED-ADB-INSTALL.txt
+            grep -q 'Success' /tmp/signed-out/SIGNED-ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/signed-out/SIGNED-ADB-LAUNCH.txt
+            sleep 5
+            adb logcat -d > /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/signed-out/SIGNED-LOGCAT-FIRST.txt
+            adb shell dumpsys activity activities | grep -q 'ai.sinergy.smm/ai.sinergy.smm.MainActivity'
+            adb exec-out screencap -p > /tmp/signed-out/SIGNED-ANDROID-HOME.png
+            test -s /tmp/signed-out/SIGNED-ANDROID-HOME.png
+            adb shell input keyevent 4
+            sleep 1
+            adb shell am force-stop ai.sinergy.smm
+            adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity > /tmp/signed-out/SIGNED-ADB-RESTART.txt
+            sleep 4
+            adb logcat -d > /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm|SINERGY_SMM.*WEB_FATAL' /tmp/signed-out/SIGNED-LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/signed-out/SIGNED-ANDROID-RESTART.png
+            test -s /tmp/signed-out/SIGNED-ANDROID-RESTART.png
+            printf 'SIGNED_ADB_INSTALL_PASS\nSIGNED_FIRST_FRAME_HOME_PASS\nSIGNED_ANDROID_SCREENSHOT_PASS\nSIGNED_BACK_RESTART_PASS\n' > /tmp/signed-out/SIGNED-ANDROID-SMOKE-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3-SIGNED-RUNTIME-EVIDENCE
+          path: /tmp/signed-out/*
+          if-no-files-found: error
+          retention-days: 30

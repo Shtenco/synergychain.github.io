@@ -1,0 +1,17 @@
+name: SINERGY SMM legacy FULL recovery (diagnostic only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record historical corruption
+        run: |
+          echo 'LEGACY_FULL_SOURCE_NOT_TRUSTED'
+          echo 'Historical split/base64 payload is corrupted and is not a release source.'

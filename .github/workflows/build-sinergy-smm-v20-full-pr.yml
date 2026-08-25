@@ -1,0 +1,170 @@
+name: Build SINERGY SMM v2.1 CLEAN INSTALL APK
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-full-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Restore verified full v2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat smm-v2-clean/part00 smm-v2-clean/part01 smm-v2-clean/part02 smm-v2-clean/part03 smm-v2-clean/part04 smm-v2-clean/part05 smm-v2-clean/part06 smm-v2-clean/part07 > /tmp/source.b64
+          test "$(wc -c < /tmp/source.b64)" -eq 63412
+          echo "c94839585d53daadde6f2bb35e0fd41dcd84c7154cf90ce351d74563059df3bc  /tmp/source.b64" | sha256sum -c -
+          base64 -d /tmp/source.b64 > /tmp/source.tar.gz
+          echo "056801942413089735dea03b37f608a9283340a451792a69c1eb040a9b6ab305  /tmp/source.tar.gz" | sha256sum -c -
+          gzip -t /tmp/source.tar.gz
+          rm -rf /tmp/sinergy-smm-full
+          mkdir -p /tmp/sinergy-smm-full
+          tar -xzf /tmp/source.tar.gz -C /tmp/sinergy-smm-full
+          test -s /tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html
+
+      - name: Apply clean identity and exact Finance branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=/tmp/sinergy-smm-full/android/app
+          ROOT="$APP/src/main/assets/www"
+
+          cat > "$APP/build.gradle" <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'ai.sinergy.smm'
+              compileSdk 36
+
+              defaultConfig {
+                  applicationId 'ai.sinergy.smm.full'
+                  minSdk 26
+                  targetSdk 36
+                  versionCode 210
+                  versionName '2.1.0'
+              }
+
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.activity:activity:1.10.1'
+              implementation 'androidx.webkit:webkit:1.14.0'
+          }
+          EOF
+
+          mkdir -p "$APP/src/main/res/drawable" "$APP/src/main/res/values-v31" "$ROOT/icons"
+          cp "$GITHUB_WORKSPACE/smm-v2-branding/sinergy-logo.png" "$ROOT/icons/sinergy-logo.png"
+          cp "$GITHUB_WORKSPACE/smm-v2-branding/sinergy-logo.png" "$APP/src/main/res/drawable/sinergy_logo.png"
+          test -s "$ROOT/icons/sinergy-logo.png"
+          test -s "$APP/src/main/res/drawable/sinergy_logo.png"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path('/tmp/sinergy-smm-full/android/app/src/main/AndroidManifest.xml')
+          s = manifest.read_text(encoding='utf-8')
+          s = re.sub(r'android:icon="[^"]+"', 'android:icon="@drawable/sinergy_logo"', s)
+          if 'android:roundIcon=' in s:
+              s = re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@drawable/sinergy_logo"', s)
+          else:
+              s = s.replace('android:icon="@drawable/sinergy_logo"', 'android:icon="@drawable/sinergy_logo" android:roundIcon="@drawable/sinergy_logo"')
+          manifest.write_text(s, encoding='utf-8')
+
+          index = Path('/tmp/sinergy-smm-full/android/app/src/main/assets/www/index.html')
+          h = index.read_text(encoding='utf-8')
+          h = h.replace('icons/smm-logo.svg', 'icons/sinergy-logo.png').replace('v2.0.0 FULL', 'v2.1.0 FULL')
+          index.write_text(h, encoding='utf-8')
+
+          styles = Path('/tmp/sinergy-smm-full/android/app/src/main/res/values-v31/styles.xml')
+          styles.write_text('''<resources>
+            <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+              <item name="android:windowSplashScreenBackground">#020403</item>
+              <item name="android:windowSplashScreenAnimatedIcon">@drawable/sinergy_logo</item>
+            </style>
+          </resources>\n''', encoding='utf-8')
+          PY
+
+          grep -q 'android:icon="@drawable/sinergy_logo"' "$APP/src/main/AndroidManifest.xml"
+          grep -q 'icons/sinergy-logo.png' "$ROOT/index.html"
+          echo branding-ok
+
+      - name: Install Android API 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify full UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/sinergy-smm-full/android/app/src/main/assets/www
+          node --check "$ROOT/js/app.js"
+          ROUTES=$(grep -o 'class="route' "$ROOT/index.html" | wc -l)
+          echo "routes=$ROUTES"
+          test "$ROUTES" -ge 12
+          for route in home studio calendar publisher inbox leads audience analytics brain autopilot integrations settings; do
+            grep -q "data-route=\"$route\"" "$ROOT/index.html"
+          done
+          test -s "$ROOT/icons/sinergy-logo.png"
+
+      - name: Build clean-install APK
+        working-directory: /tmp/sinergy-smm-full/android
+        run: gradle --no-daemon clean :app:assembleDebug
+
+      - name: Verify APK identity branding and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find /tmp/sinergy-smm-full/android/app/build/outputs/apk/debug -name '*.apk' -type f | head -1)
+          test -n "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/badging.txt
+          cat /tmp/badging.txt | head -5
+          grep -q "package: name='ai.sinergy.smm.full' versionCode='210' versionName='2.1.0'" /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > /tmp/signature.txt
+          cat /tmp/signature.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/signature.txt
+          unzip -l "$APK" > /tmp/apk-files.txt
+          grep -q 'assets/www/index.html' /tmp/apk-files.txt
+          grep -q 'assets/www/js/app.js' /tmp/apk-files.txt
+          grep -q 'assets/www/icons/sinergy-logo.png' /tmp/apk-files.txt
+          grep -q 'res/drawable/sinergy_logo.png' /tmp/apk-files.txt
+          mkdir -p /tmp/dist
+          cp "$APK" /tmp/dist/SINERGY-SMM-v2.1.0-CLEAN-INSTALL.apk
+          sha256sum /tmp/dist/SINERGY-SMM-v2.1.0-CLEAN-INSTALL.apk > /tmp/dist/SINERGY-SMM-v2.1.0-CLEAN-INSTALL.apk.sha256
+          cp /tmp/badging.txt /tmp/dist/AAPT-BADGING.txt
+          cp /tmp/signature.txt /tmp/dist/SIGNATURE-VERIFY.txt
+          printf 'package=ai.sinergy.smm.full\nversionCode=210\nversionName=2.1.0\nroutes=12\nfinance_branding=true\n' > /tmp/dist/BUILD-VERIFY.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v2.1.0-CLEAN-INSTALL-APK
+          path: /tmp/dist/*
+          if-no-files-found: error
+          retention-days: 30

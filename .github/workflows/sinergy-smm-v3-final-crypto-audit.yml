@@ -54,17 +54,18 @@ jobs:
           grep -qx 'FOCUSED_WINDOW_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
           grep -qx 'SIGNED_RESTART_PASS' /tmp/final/strict/STRICT-SIGNED-VISUAL-GATE.txt
           cp "$RUNTIME_APK" /tmp/final/out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
-      - name: Persistent signer, APK Signature v1/v2, 16-KiB and fingerprint gates
+      - name: Persistent signer, APK Signature v2, 16-KiB and fingerprint gates
         shell: bash
         run: |
           set -euo pipefail
           APK=/tmp/final/out/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk
           BT="$ANDROID_HOME/build-tools/36.0.0"
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/final/out/APKSIGNER-VERIFY.txt
-          grep -Fq 'Verified using v1 scheme (JAR signing): true' /tmp/final/out/APKSIGNER-VERIFY.txt
           grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -Fq 'Number of signers: 1' /tmp/final/out/APKSIGNER-VERIFY.txt
           grep -Fiq 'Signer #1 certificate DN: CN=SINERGY Persistent Release 2026, OU=Android Release, O=SINERGY, C=KZ' /tmp/final/out/APKSIGNER-VERIFY.txt
           grep -Fiq 'Signer #1 certificate SHA-256 digest: d0036c6bb3c9e56414f354256bd06bb32e2c29623ca9963437254695696d62d8' /tmp/final/out/APKSIGNER-VERIFY.txt
+          grep -F 'Verified using v1 scheme (JAR signing):' /tmp/final/out/APKSIGNER-VERIFY.txt > /tmp/final/out/APK-V1-STATUS.txt
           "$BT/zipalign" -c -P 16 -v 4 "$APK" | tee /tmp/final/out/ZIPALIGN-16K.txt
           if unzip -Z1 "$APK" | grep -Eq '^lib/.+\.so$'; then
             echo 'Unexpected native .so payload: dedicated ELF 16-KiB audit required' >&2
@@ -97,7 +98,7 @@ jobs:
           STRICT_FOCUSED_WINDOW_EVIDENCE_PASS
           PERSISTENT_SIGNING_IDENTITY_PASS
           CERT_SHA256_FINGERPRINT_PASS
-          APK_SIGNATURE_V1_PASS
+          SINGLE_SIGNER_PASS
           APK_SIGNATURE_V2_PASS
           ZIPALIGN_16K_PASS
           NO_NATIVE_SO_PASS

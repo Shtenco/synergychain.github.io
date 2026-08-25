@@ -13,13 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct full source blob
+      - name: Reconstruct full source from canonical workflow heredoc
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/full/source /tmp/full/out
-          cat smm-v2-build/source.b64.part00 smm-v2-build/source.b64.part01 smm-v2-build/source.b64.part02 smm-v2-build/source.b64.part03 smm-v2-build/source.b64.part04 > /tmp/full/source.b64
-          base64 -d /tmp/full/source.b64 > /tmp/full/source.bin
+          python - <<'PY'
+          from pathlib import Path
+          import re, base64
+          p=Path('.github/workflows/build-sinergy-smm-v20-full.yml')
+          s=p.read_text()
+          m=re.search(r"cat > /tmp/source\.b64 <<'B64'\n(.*?)\nB64", s, re.S)
+          assert m, 'canonical B64 heredoc not found'
+          b64=''.join(m.group(1).split())
+          raw=base64.b64decode(b64, validate=True)
+          Path('/tmp/full/source.b64').write_text(b64)
+          Path('/tmp/full/source.bin').write_bytes(raw)
+          print('B64_CHARS', len(b64))
+          print('RAW_BYTES', len(raw))
+          PY
           file /tmp/full/source.bin | tee /tmp/full/out/TYPE.txt
           if tar -tzf /tmp/full/source.bin >/tmp/full/out/TREE.txt 2>/dev/null; then
             tar -xzf /tmp/full/source.bin -C /tmp/full/source

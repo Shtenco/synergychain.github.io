@@ -77,16 +77,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          BT="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          test -x "$BT/zipalign"
+          test -x "$BT/apksigner"
+          test -x "$BT/aapt2"
           PASS=$(sed -n 's/^Store password: //p' /tmp/v310/RECOVERY.txt | head -1)
           test -n "$PASS"
           UNSIGNED=$(find /tmp/smm-v311/android/app/build/outputs/apk/release -name '*.apk' | head -1)
           test -s "$UNSIGNED"
-          zipalign -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
-          apksigner sign --ks /tmp/v310/SINERGY-SMM-RELEASE-2026-CANONICAL.jks --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
-          apksigner verify --verbose --print-certs /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/APKSIGNER-VERIFY.txt
+          "$BT/zipalign" -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
+          "$BT/apksigner" sign --ks /tmp/v310/SINERGY-SMM-RELEASE-2026-CANONICAL.jks --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk /tmp/SINERGY-SMM-v3.1.1-PRO-ALIGNED.apk
+          "$BT/apksigner" verify --verbose --print-certs /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/APKSIGNER-VERIFY.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/v311-evidence/APKSIGNER-VERIFY.txt
           grep -qi '53b5a94f8cd794a849ce51277a95a1c1a6be24c56537b66239e7a0b00faef85b' /tmp/v311-evidence/APKSIGNER-VERIFY.txt
-          aapt2 dump badging /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/AAPT-BADGING.txt
+          "$BT/aapt2" dump badging /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/v311-evidence/AAPT-BADGING.txt
           grep -q "package: name='ai.sinergy.smm.pro' versionCode='311' versionName='3.1.1'" /tmp/v311-evidence/AAPT-BADGING.txt
           for f in $(unzip -Z1 /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | grep -E '^res/[^/]+\.png$'); do h=$(unzip -p /tmp/v311-evidence/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk "$f" | sha256sum | awk '{print $1}'); if [ "$h" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' ]; then echo "$f $h"; fi; done | tee /tmp/v311-evidence/PACKAGED-FINANCE-ICONS.txt
           test "$(grep -c '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' /tmp/v311-evidence/PACKAGED-FINANCE-ICONS.txt)" -ge 5

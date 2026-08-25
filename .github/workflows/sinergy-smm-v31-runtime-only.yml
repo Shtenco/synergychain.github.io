@@ -1,0 +1,77 @@
+name: SINERGY SMM v3.1 Canonical Runtime Only
+
+on:
+  push:
+    branches: [sinergy-smm-v3-product-v31-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  runtime-canonical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download exact canonical signed artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/canonical /tmp/runtime-evidence
+          mkdir -p /tmp/canonical /tmp/runtime-evidence
+          gh run download 32895236017 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.1-PRO-CANONICAL-PRESIGN --dir /tmp/canonical
+          test -s /tmp/canonical/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk
+          echo '9ee779260520f151a0f4554d8ad198a14eba79c48f0bd1661c845ad7a68e74b4  /tmp/canonical/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk' | sha256sum -c -
+          cp /tmp/canonical/APKSIGNER-VERIFY.txt /tmp/runtime-evidence/
+          cp /tmp/canonical/AAPT-BADGING.txt /tmp/runtime-evidence/
+          printf 'CANONICAL_APK_SHA_PASS\n' > /tmp/runtime-evidence/RUNTIME-GATES.txt
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 exact signed APK install / first frame / restart
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb logcat -c
+            adb install -r /tmp/canonical/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk | tee /tmp/runtime-evidence/ADB-INSTALL.txt
+            grep -q Success /tmp/runtime-evidence/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/runtime-evidence/ADB-LAUNCH.txt
+            sleep 6
+            adb logcat -d > /tmp/runtime-evidence/LOGCAT-FIRST.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/runtime-evidence/LOGCAT-FIRST.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/runtime-evidence/LOGCAT-FIRST.txt
+            adb exec-out screencap -p > /tmp/runtime-evidence/ANDROID-HOME.png
+            test -s /tmp/runtime-evidence/ANDROID-HOME.png
+            adb shell input keyevent 4
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/runtime-evidence/ADB-RESTART.txt
+            sleep 5
+            adb logcat -d > /tmp/runtime-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/runtime-evidence/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/runtime-evidence/LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/runtime-evidence/ANDROID-RESTART.png
+            test -s /tmp/runtime-evidence/ANDROID-RESTART.png
+            printf 'CANONICAL_APK_SHA_PASS\nSIGNED_ADB_INSTALL_PASS\nSIGNED_FIRST_FRAME_HOME_PASS\nSIGNED_ANDROID_SCREENSHOT_PASS\nSIGNED_BACK_RESTART_PASS\n' > /tmp/runtime-evidence/RUNTIME-GATES.txt
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.1-PRO-CANONICAL-RUNTIME
+          path: /tmp/runtime-evidence/*
+          if-no-files-found: warn
+          retention-days: 3

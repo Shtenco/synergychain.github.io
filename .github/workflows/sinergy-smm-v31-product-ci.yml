@@ -30,6 +30,19 @@ jobs:
           mkdir -p /tmp/base
           tar -xzf /tmp/runtime.tar.gz -C /tmp/base --strip-components=1
 
+      - name: Restore exact SINERGY Finance launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '0af53e6ca79e38a2dfb6bc3b689453b38c01a150337154dc0ad441ef4d486cc4  smm-v3-product-v31/finance-launcher.b64.part00' | sha256sum -c -
+          echo 'b158748dd2af573ebe62cf346e666379b108fd019d39f4c4945ea245d90012a1  smm-v3-product-v31/finance-launcher.b64.part01' | sha256sum -c -
+          echo 'af055fee758361c772f4be7430b7f9b5ca23a8e3255bfcd66f0094db7a8aeef5  smm-v3-product-v31/finance-launcher.b64.part02' | sha256sum -c -
+          cat smm-v3-product-v31/finance-launcher.b64.part00 smm-v3-product-v31/finance-launcher.b64.part01 smm-v3-product-v31/finance-launcher.b64.part02 > /tmp/finance-launcher.b64
+          echo '9093a533b93db859604e809c1fa8231142b72b05aefffd23babc77cd7bc7a617  /tmp/finance-launcher.b64' | sha256sum -c -
+          base64 -d /tmp/finance-launcher.b64 > /tmp/finance-launcher.png
+          echo '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/finance-launcher.png' | sha256sum -c -
+          file /tmp/finance-launcher.png
+
       - name: Verify and apply v3.1 product builder
         shell: bash
         run: |
@@ -39,8 +52,7 @@ jobs:
           echo '12d6efb31025a9d33b49c639ada6c4f845e938fdf5b4881c4750393f60fe18aa  /tmp/build_v31.py.gz' | sha256sum -c -
           gzip -dc /tmp/build_v31.py.gz > /tmp/build_v31.py
           echo '41c2dafefb03262245259b773b4c45e59dbbd3138146a8c4256a40f21a248b85  /tmp/build_v31.py' | sha256sum -c -
-          echo '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  smm-v3-ci/finance-launcher.png' | sha256sum -c -
-          SMM_BASE=/tmp/base SMM_OUT=/tmp/smm-v31 FINANCE_LAUNCHER="$GITHUB_WORKSPACE/smm-v3-ci/finance-launcher.png" python /tmp/build_v31.py
+          SMM_BASE=/tmp/base SMM_OUT=/tmp/smm-v31 FINANCE_LAUNCHER=/tmp/finance-launcher.png python /tmp/build_v31.py
           grep -q "applicationId 'ai.sinergy.smm.pro'" /tmp/smm-v31/android/app/build.gradle
           grep -q 'android:label="Синергия-СММ"' /tmp/smm-v31/android/app/src/main/AndroidManifest.xml
           python - <<'PY'
@@ -49,6 +61,10 @@ jobs:
           assert len(r)==77 and len({x['id'] for x in r})==77
           print('REGISTRY_77_PASS')
           PY
+          echo '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/smm-v31/android/app/src/main/assets/www/icons/sinergy-logo.png' | sha256sum -c -
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            echo "7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/smm-v31/android/app/src/main/res/mipmap-$d/ic_launcher.png" | sha256sum -c -
+          done
 
       - name: Backend contract tests
         run: python /tmp/smm-v31/tests/backend/contract_test.py
@@ -58,7 +74,14 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet playwright
-          if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          if command -v chromium >/dev/null; then
+            :
+          elif command -v google-chrome >/dev/null; then
+            sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium
+          else
+            sudo apt-get update
+            sudo apt-get install -y chromium
+          fi
           python /tmp/smm-v31/tests/web/e2e.py
           test "$(find /tmp/smm-v31/SCREENSHOTS -name '*.png' | wc -l)" -eq 78
 
@@ -114,13 +137,12 @@ jobs:
           EOF
           keytool -list -v -keystore "$KEY" -storepass "$PASS" -alias sinergy-smm-release > "$OUT/CERTIFICATE-DETAILS.txt"
           grep 'SHA256:' "$OUT/CERTIFICATE-DETAILS.txt" | head -1 > "$OUT/PUBLIC-FINGERPRINT.txt"
-          sha256sum "$KEY" "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" > "$OUT/SHA256SUMS.txt"
           aapt2 dump badging "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" | tee "$OUT/AAPT-BADGING.txt"
           grep -q "package: name='ai.sinergy.smm.pro'" "$OUT/AAPT-BADGING.txt"
-          echo '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/smm-v31/android/app/src/main/assets/www/icons/sinergy-logo.png' | sha256sum -c -
-          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do echo "7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/smm-v31/android/app/src/main/res/mipmap-$d/ic_launcher.png" | sha256sum -c -; done
+          tar --exclude='SCREENSHOTS' -czf "$OUT/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz" -C /tmp/smm-v31 .
           cp /tmp/smm-v31/PRODUCT-MANIFEST.json "$OUT/PRODUCT-MANIFEST.json"
-          printf 'BASE_SOURCE_SHA_PASS\nBUILDER_SHA_PASS\nREGISTRY_77_PASS\nBACKEND_9_PASS\nWEB_13_ROUTE_78_SCREENSHOT_PASS\nGRADLE_RELEASE_PASS\nNEW_RSA3072_KEY_CREATED\nAPK_V2_SIGNATURE_PASS\nPACKAGE_PRO_PASS\nFINANCE_LOGO_BYTE_PARITY_PASS\n' > "$OUT/STATIC-GATES.txt"
+          sha256sum "$KEY" "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" "$OUT/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz" > "$OUT/SHA256SUMS.txt"
+          printf 'BASE_SOURCE_SHA_PASS\nFINANCE_LAUNCHER_SHA_PASS\nBUILDER_SHA_PASS\nREGISTRY_77_PASS\nBACKEND_9_PASS\nWEB_13_ROUTE_78_SCREENSHOT_PASS\nGRADLE_RELEASE_PASS\nNEW_RSA3072_KEY_CREATED\nAPK_V2_SIGNATURE_PASS\nPACKAGE_PRO_PASS\nFINANCE_LOGO_BYTE_PARITY_PASS\n' > "$OUT/STATIC-GATES.txt"
 
       - name: Enable KVM
         shell: bash

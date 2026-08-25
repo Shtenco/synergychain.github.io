@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      BASE_RPC_URL: https://mainnet.base.org
+      BASE_RPC_URL: https://base-rpc.publicnode.com
     steps:
       - uses: actions/checkout@v4
       - name: Install Foundry
@@ -18,6 +18,8 @@ jobs:
           version: stable
       - name: Foundry version
         run: forge --version
+      - name: Probe Base RPC
+        run: cast block-number --rpc-url "$BASE_RPC_URL"
       - name: Run V12.4 Base fork tests
         working-directory: evm_v12_4
         run: forge test -vvvv

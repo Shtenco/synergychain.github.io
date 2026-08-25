@@ -1,0 +1,183 @@
+name: SINERGY SMM v3.1 PRO Product CI v2
+
+on:
+  push:
+    branches: [sinergy-smm-v3-product-v31-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  product-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore verified v3 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '767458314b952d2fc44a2289f9e139550f9d0f61035dd5b54c226721034c5847  smm-v3-ci/runtime_noicons.part00' | sha256sum -c -
+          cat smm-v3-ci/runtime_fix.part01a smm-v3-ci/runtime_fix.part01b > /tmp/part01
+          echo 'd9eec4f6da1036751f52d177827f6a5a06dd7ba48d1731a52e823ca98ae98aba  /tmp/part01' | sha256sum -c -
+          echo '646497e83b6c6d17d9a10ce392d78ca2fe256190ec00c9fd810873c5fd0fef15  smm-v3-ci/runtime_fix.part02a' | sha256sum -c -
+          echo 'e8e6f6509b539823cdb2f14cd7ce78d2012ed30d8294ee9f7d7246d9d2df0bc7  smm-v3-ci/runtime_fix.part03' | sha256sum -c -
+          cat smm-v3-ci/runtime_noicons.part00 /tmp/part01 smm-v3-ci/runtime_fix.part02a smm-v3-ci/runtime_fix.part03 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.tar.gz
+          echo '0306671d5315792bd3e4979d134f61879965ed61a13597cddfe000ec54566c13  /tmp/runtime.tar.gz' | sha256sum -c -
+          mkdir -p /tmp/base
+          tar -xzf /tmp/runtime.tar.gz -C /tmp/base --strip-components=1
+
+      - name: Restore exact Finance launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '0af53e6ca79e38a2dfb6bc3b689453b38c01a150337154dc0ad441ef4d486cc4  smm-v3-product-v31/finance-launcher.b64.part00' | sha256sum -c -
+          echo 'b158748dd2af573ebe62cf346e666379b108fd019d39f4c4945ea245d90012a1  smm-v3-product-v31/finance-launcher.b64.part01' | sha256sum -c -
+          echo 'af055fee758361c772f4be7430b7f9b5ca23a8e3255bfcd66f0094db7a8aeef5  smm-v3-product-v31/finance-launcher.b64.part02' | sha256sum -c -
+          cat smm-v3-product-v31/finance-launcher.b64.part0{0,1,2} > /tmp/finance-launcher.b64
+          echo '9093a533b93db859604e809c1fa8231142b72b05aefffd23babc77cd7bc7a617  /tmp/finance-launcher.b64' | sha256sum -c -
+          base64 -d /tmp/finance-launcher.b64 > /tmp/finance-launcher.png
+          echo '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6  /tmp/finance-launcher.png' | sha256sum -c -
+
+      - name: Build v3.1 source and apply verified fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'fbcf1c4b55e036e4af406d401fe5b86e15b97b0612a7d82abfdfa994c1285c22  smm-v3-product-v31/build_v31_ci.py.gz.b64' | sha256sum -c -
+          base64 -d smm-v3-product-v31/build_v31_ci.py.gz.b64 > /tmp/build_v31.py.gz
+          echo '12d6efb31025a9d33b49c639ada6c4f845e938fdf5b4881c4750393f60fe18aa  /tmp/build_v31.py.gz' | sha256sum -c -
+          gzip -dc /tmp/build_v31.py.gz > /tmp/build_v31.py
+          echo '41c2dafefb03262245259b773b4c45e59dbbd3138146a8c4256a40f21a248b85  /tmp/build_v31.py' | sha256sum -c -
+          SMM_BASE=/tmp/base SMM_OUT=/tmp/smm-v31 FINANCE_LAUNCHER=/tmp/finance-launcher.png python /tmp/build_v31.py
+          echo '6749c3b599600980ad2dc0ef82a39625b298209758b50bd72cdfc095a709517f  smm-v3-product-v31/post_builder_fix_v31.py' | sha256sum -c -
+          python smm-v3-product-v31/post_builder_fix_v31.py
+          grep -q "applicationId 'ai.sinergy.smm.pro'" /tmp/smm-v31/android/app/build.gradle
+          grep -q 'android:label="Синергия-СММ"' /tmp/smm-v31/android/app/src/main/AndroidManifest.xml
+          python - <<'PY'
+          import json
+          r=json.load(open('/tmp/smm-v31/backend/action_registry.json'))
+          assert len(r)==77 and len({x['id'] for x in r})==77
+          print('REGISTRY_77_PASS')
+          PY
+          for f in /tmp/smm-v31/android/app/src/main/assets/www/icons/sinergy-logo.png /tmp/smm-v31/android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png /tmp/smm-v31/android/app/src/main/res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher_round.png; do
+            test "$(sha256sum "$f" | awk '{print $1}')" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6'
+          done
+
+      - name: Backend 77 contract gate
+        run: python /tmp/smm-v31/tests/backend/contract_test.py
+
+      - name: Browser E2E 13 routes / 78 screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet playwright
+          if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          python /tmp/smm-v31/tests/web/e2e.py
+          test "$(find /tmp/smm-v31/SCREENSHOTS -name '*.png' | wc -l)" -eq 78
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Gradle release build
+        working-directory: /tmp/smm-v31/android
+        run: gradle --no-daemon clean :app:assembleRelease
+
+      - name: Create signing identity and signed APK
+        id: sign
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/product-evidence
+          mkdir -p "$OUT"
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          UNSIGNED=$(find /tmp/smm-v31/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -s "$UNSIGNED"
+          PASS=$(openssl rand -hex 24)
+          KEY="$OUT/SINERGY-SMM-RELEASE-2026-CANONICAL.jks"
+          keytool -genkeypair -keystore "$KEY" -storetype PKCS12 -storepass "$PASS" -keypass "$PASS" -alias sinergy-smm-release -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=SINERGY SMM Release 2026, OU=Android Release, O=SINERGY, C=KZ' >/dev/null 2>&1
+          "$BT/zipalign" -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.1.0-PRO-ALIGNED.apk
+          "$BT/apksigner" sign --ks "$KEY" --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" /tmp/SINERGY-SMM-v3.1.0-PRO-ALIGNED.apk
+          "$BT/apksigner" verify --verbose --print-certs "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" | tee "$OUT/APKSIGNER-VERIFY.txt"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$OUT/APKSIGNER-VERIFY.txt"
+          "$BT/aapt2" dump badging "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" | tee "$OUT/AAPT-BADGING.txt"
+          grep -q "package: name='ai.sinergy.smm.pro'" "$OUT/AAPT-BADGING.txt"
+          cat > "$OUT/RECOVERY.txt" <<EOF
+          Application ID: ai.sinergy.smm.pro
+          App name: Синергия-СММ
+          Alias: sinergy-smm-release
+          Store password: $PASS
+          Key password: $PASS
+          IMPORTANT: keep this JKS and RECOVERY.txt permanently. Every future update of ai.sinergy.smm.pro must use this exact key.
+          EOF
+          keytool -list -v -keystore "$KEY" -storepass "$PASS" -alias sinergy-smm-release > "$OUT/CERTIFICATE-DETAILS.txt"
+          grep 'SHA256:' "$OUT/CERTIFICATE-DETAILS.txt" | head -1 > "$OUT/PUBLIC-FINGERPRINT.txt"
+          tar --exclude='./SCREENSHOTS' --exclude='./android/.gradle' --exclude='./android/app/build' -czf "$OUT/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz" -C /tmp/smm-v31 .
+          cp /tmp/smm-v31/PRODUCT-MANIFEST.json "$OUT/PRODUCT-MANIFEST.json"
+          sha256sum "$KEY" "$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk" "$OUT/SINERGY-SMM-v3.1.0-CANONICAL-SOURCE.tar.gz" > "$OUT/SHA256SUMS.txt"
+          printf 'BASE_SOURCE_PASS\nFINANCE_LAUNCHER_PASS\nBUILDER_PASS\nPOST_BUILDER_FIX_PASS\nREGISTRY_77_PASS\nBACKEND_9_PASS\nWEB_13_ROUTE_78_SCREENSHOT_PASS\nGRADLE_RELEASE_PASS\nRSA3072_KEY_PASS\nAPK_V2_SIGNATURE_PASS\nPACKAGE_PRO_PASS\n' > "$OUT/STATIC-GATES.txt"
+
+      - name: Preserve signed product before emulator
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.1-PRO-CANONICAL-PRESIGN
+          path: /tmp/product-evidence/*
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 signed runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            set -e
+            OUT=/tmp/product-evidence
+            APK="$OUT/SINERGY-SMM-v3.1.0-PRO-SIGNED.apk"
+            adb logcat -c
+            adb install -r "$APK" | tee "$OUT/ADB-INSTALL.txt"
+            grep -q Success "$OUT/ADB-INSTALL.txt"
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee "$OUT/ADB-LAUNCH.txt"
+            sleep 5
+            adb logcat -d > "$OUT/LOGCAT-FIRST.txt"
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' "$OUT/LOGCAT-FIRST.txt"
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' "$OUT/LOGCAT-FIRST.txt"
+            adb exec-out screencap -p > "$OUT/ANDROID-HOME.png"
+            test -s "$OUT/ANDROID-HOME.png"
+            adb shell input keyevent 4
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity > "$OUT/ADB-RESTART.txt"
+            sleep 4
+            adb logcat -d > "$OUT/LOGCAT-RESTART.txt"
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' "$OUT/LOGCAT-RESTART.txt"
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' "$OUT/LOGCAT-RESTART.txt"
+            adb exec-out screencap -p > "$OUT/ANDROID-RESTART.png"
+            test -s "$OUT/ANDROID-RESTART.png"
+            printf 'SIGNED_ADB_INSTALL_PASS\nSIGNED_FIRST_FRAME_HOME_PASS\nSIGNED_ANDROID_SCREENSHOT_PASS\nSIGNED_BACK_RESTART_PASS\n' > "$OUT/ANDROID-GATES.txt"
+
+      - name: Preserve final signed runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.1-PRO-CANONICAL-FINAL
+          path: /tmp/product-evidence/*
+          if-no-files-found: warn
+          retention-days: 1

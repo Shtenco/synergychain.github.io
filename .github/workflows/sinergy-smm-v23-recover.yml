@@ -3,6 +3,8 @@ name: SINERGY SMM v2.3 Recover
 on:
   push:
     branches: [sinergy-smm-v3-release-gates]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

@@ -1,60 +1,17 @@
-name: SINERGY SMM v2 FULL Recover
+name: SINERGY SMM legacy FULL recovery (diagnostic only)
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  recover-full:
+  diagnostic:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct full source from canonical workflow heredoc
-        shell: bash
+      - name: Record historical corruption
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/full/source /tmp/full/out
-          python - <<'PY'
-          from pathlib import Path
-          import re, base64
-          p=Path('.github/workflows/build-sinergy-smm-v20-full.yml')
-          s=p.read_text()
-          m=re.search(r"cat > /tmp/source\.b64 <<'B64'\n(.*?)\nB64", s, re.S)
-          assert m, 'canonical B64 heredoc not found'
-          b64=''.join(m.group(1).split())
-          raw=base64.b64decode(b64, validate=True)
-          Path('/tmp/full/source.b64').write_text(b64)
-          Path('/tmp/full/source.bin').write_bytes(raw)
-          print('B64_CHARS', len(b64))
-          print('RAW_BYTES', len(raw))
-          PY
-          file /tmp/full/source.bin | tee /tmp/full/out/TYPE.txt
-          if tar -tzf /tmp/full/source.bin >/tmp/full/out/TREE.txt 2>/dev/null; then
-            tar -xzf /tmp/full/source.bin -C /tmp/full/source
-          elif unzip -l /tmp/full/source.bin >/tmp/full/out/TREE.txt 2>/dev/null; then
-            unzip -q /tmp/full/source.bin -d /tmp/full/source
-          else
-            echo UNKNOWN_SOURCE_CONTAINER >&2
-            exit 1
-          fi
-          {
-            echo '=== FILES ==='
-            find /tmp/full/source -type f | sort
-            echo '=== FUNCTION HITS ==='
-            grep -RniE 'like|comment|campaign|broadcast|message|direct|mail|рассыл|коммент|лайк|whatsapp|instagram|facebook|telegram|vk|zen|autopilot|crm|audience|provider' /tmp/full/source --exclude='*.map' | head -n 5000 || true
-            echo '=== LOGO / LAUNCHER ==='
-            find /tmp/full/source -type f \( -iname '*logo*' -o -iname '*launcher*' -o -path '*/mipmap-*/*' -o -path '*/drawable*/*' \) | sort
-          } > /tmp/full/out/FULL-RECOVERY-REPORT.txt
-          cd /tmp/full/source
-          zip -qr /tmp/full/out/SINERGY-SMM-v2-FULL-RECOVERED-SOURCE.zip .
-          sha256sum /tmp/full/out/SINERGY-SMM-v2-FULL-RECOVERED-SOURCE.zip > /tmp/full/out/SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SINERGY-SMM-v2-FULL-RECOVERED
-          path: /tmp/full/out/*
-          if-no-files-found: error
-          retention-days: 30
+          echo 'LEGACY_FULL_SOURCE_NOT_TRUSTED'
+          echo 'Historical split/base64 payload is corrupted and is not a release source.'

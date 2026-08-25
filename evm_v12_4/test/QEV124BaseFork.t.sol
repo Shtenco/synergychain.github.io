@@ -14,7 +14,7 @@ contract QEV124BaseForkTest {
     VmV124 internal constant vm = VmV124(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     address internal constant WETH = 0x4200000000000000000000000000000000000006;
-    address internal constant USDC = 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913;
+    address internal constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
     uint256 internal constant START_WETH = 2e14;
     uint256 internal constant START_USDC = 500_000;

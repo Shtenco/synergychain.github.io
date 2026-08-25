@@ -1,0 +1,93 @@
+name: SINERGY SMM v3.1.1 Clean Visual Confirm
+
+on:
+  push:
+    branches: [sinergy-smm-v3-product-v31-rebuild]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  clean-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact canonical v3.1.1 APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v311 /tmp/clean-evidence
+          mkdir -p /tmp/v311 /tmp/clean-evidence
+          gh run download 32907313576 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.1.1-PRO-CANONICAL-RELEASE --dir /tmp/v311
+          echo '93e462ec96446c01d061cbf089bcf6432641081ae383aebb4ce69eb0be3e86fc  /tmp/v311/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk' | sha256sum -c -
+      - uses: android-actions/setup-android@v3
+      - name: Install clean visual validator
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          cat > /tmp/check_visual.py <<'PY'
+          import sys
+          from PIL import Image,ImageStat
+          p=sys.argv[1]
+          im=Image.open(p).convert('RGB'); w,h=im.size
+          c=im.crop((0,max(140,int(h*.08)),w,min(h-150,int(h*.92))))
+          pix=list(c.getdata())
+          nonblack=sum(max(x)>30 for x in pix)/len(pix)
+          bright=sum(max(x)>80 for x in pix)/len(pix)
+          verybright=sum(max(x)>160 for x in pix)/len(pix)
+          std=max(ImageStat.Stat(c).stddev)
+          print(f'CLEAN_VISUAL nonblack={nonblack:.6f} bright={bright:.6f} verybright={verybright:.6f} std={std:.3f}')
+          assert nonblack>0.10 and bright>0.025 and verybright>0.005 and std>10
+          PY
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: API35 clean cold/restart render
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb shell settings put global hide_error_dialogs 1
+            adb shell settings put global show_first_crash_dialog 0 || true
+            adb logcat -c
+            adb install -r /tmp/v311/SINERGY-SMM-v3.1.1-PRO-SIGNED.apk | tee /tmp/clean-evidence/ADB-INSTALL.txt
+            grep -q Success /tmp/clean-evidence/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/clean-evidence/ADB-COLD-LAUNCH.txt
+            sleep 15
+            adb logcat -d > /tmp/clean-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/clean-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/clean-evidence/LOGCAT-COLD.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/clean-evidence/LOGCAT-COLD.txt
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window.xml /tmp/clean-evidence/UI-COLD.xml >/dev/null 2>&1 || true
+            if [ -s /tmp/clean-evidence/UI-COLD.xml ]; then ! grep -Eqi "isn't responding|not responding|Close app|Process system isn't responding" /tmp/clean-evidence/UI-COLD.xml; fi
+            adb exec-out screencap -p > /tmp/clean-evidence/ANDROID-CLEAN-COLD-15S.png
+            python /tmp/check_visual.py /tmp/clean-evidence/ANDROID-CLEAN-COLD-15S.png | tee /tmp/clean-evidence/CLEAN-COLD.txt
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/clean-evidence/ADB-RESTART.txt
+            sleep 10
+            adb logcat -d > /tmp/clean-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/clean-evidence/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|SINERGY_SMM.*WEB_FATAL' /tmp/clean-evidence/LOGCAT-RESTART.txt
+            adb shell uiautomator dump /sdcard/window2.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window2.xml /tmp/clean-evidence/UI-RESTART.xml >/dev/null 2>&1 || true
+            if [ -s /tmp/clean-evidence/UI-RESTART.xml ]; then ! grep -Eqi "isn't responding|not responding|Close app|Process system isn't responding" /tmp/clean-evidence/UI-RESTART.xml; fi
+            adb exec-out screencap -p > /tmp/clean-evidence/ANDROID-CLEAN-RESTART-10S.png
+            python /tmp/check_visual.py /tmp/clean-evidence/ANDROID-CLEAN-RESTART-10S.png | tee /tmp/clean-evidence/CLEAN-RESTART.txt
+            printf 'EXACT_V311_APK_SHA_PASS\nNO_APP_ANR_FATAL_PASS\nNO_SYSTEM_DIALOG_OVERLAY_PASS\nCLEAN_COLD_15S_VISUAL_PASS\nCLEAN_RESTART_10S_VISUAL_PASS\n' > /tmp/clean-evidence/CLEAN-VISUAL-GATES.txt
+      - name: Upload clean visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.1.1-CLEAN-VISUAL-EVIDENCE
+          path: /tmp/clean-evidence/*
+          if-no-files-found: warn
+          retention-days: 3

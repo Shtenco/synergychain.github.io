@@ -1,0 +1,15 @@
+name: V12.4 EVM public-runner probe
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner probe
+        run: |
+          uname -a
+          echo RUNNER_OK

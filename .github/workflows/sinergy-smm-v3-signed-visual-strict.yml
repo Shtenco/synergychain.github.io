@@ -53,13 +53,9 @@ jobs:
             adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
             adb install -r /tmp/strict/SINERGY-SMM-v3.0.0-FINANCE-PERSISTENT-SIGNED.apk | tee /tmp/strict/STRICT-ADB-INSTALL.txt
             grep -q 'Success' /tmp/strict/STRICT-ADB-INSTALL.txt
-
             adb logcat -c
             adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/strict/STRICT-ADB-LAUNCH.txt
-            for i in $(seq 1 20); do
-              adb logcat -d | grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' && break
-              sleep 1
-            done
+            sleep 10
             adb logcat -d > /tmp/strict/STRICT-LOGCAT-FIRST.txt
             grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/strict/STRICT-LOGCAT-FIRST.txt
             grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' /tmp/strict/STRICT-LOGCAT-FIRST.txt
@@ -69,14 +65,10 @@ jobs:
             grep -Eq 'm(CurrentFocus|FocusedApp).*ai\.sinergy\.smm/.+MainActivity' /tmp/strict/STRICT-FOCUS-FIRST.txt
             adb exec-out screencap -p > /tmp/strict/STRICT-SIGNED-HOME.png
             test -s /tmp/strict/STRICT-SIGNED-HOME.png
-
             adb shell am force-stop ai.sinergy.smm
             adb logcat -c
             adb shell am start -W -n ai.sinergy.smm/ai.sinergy.smm.MainActivity | tee /tmp/strict/STRICT-ADB-RESTART.txt
-            for i in $(seq 1 20); do
-              adb logcat -d | grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' && break
-              sleep 1
-            done
+            sleep 10
             adb logcat -d > /tmp/strict/STRICT-LOGCAT-RESTART.txt
             grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/strict/STRICT-LOGCAT-RESTART.txt
             grep -q 'SINERGY_SMM.*PAGE_FINISHED https://appassets.androidplatform.net/assets/www/index.html' /tmp/strict/STRICT-LOGCAT-RESTART.txt
@@ -86,7 +78,6 @@ jobs:
             grep -Eq 'm(CurrentFocus|FocusedApp).*ai\.sinergy\.smm/.+MainActivity' /tmp/strict/STRICT-FOCUS-RESTART.txt
             adb exec-out screencap -p > /tmp/strict/STRICT-SIGNED-RESTART.png
             test -s /tmp/strict/STRICT-SIGNED-RESTART.png
-
             printf 'EXACT_SIGNED_SHA_PASS\nSIGNED_INSTALL_PASS\nSIGNED_FIRST_FRAME_PASS\nPAGE_FINISHED_PASS\nFOCUSED_WINDOW_PASS\nSIGNED_RESTART_PASS\n' > /tmp/strict/STRICT-SIGNED-VISUAL-GATE.txt
       - uses: actions/upload-artifact@v4
         with:

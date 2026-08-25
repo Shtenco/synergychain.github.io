@@ -54,7 +54,7 @@ contract QEV124BaseForkTest {
     event PolicyDelta(uint256 indexed blockNumber, int256 qeTradeVsDoNothing, uint256 navBefore, uint256 navAfter);
 
     function setUp() public {
-        vm.createSelectFork("https://mainnet.base.org");
+        vm.createSelectFork("https://base-rpc.publicnode.com");
         require(block.chainid == 8453, "NOT_BASE");
 
         dex = new V124BestDex();

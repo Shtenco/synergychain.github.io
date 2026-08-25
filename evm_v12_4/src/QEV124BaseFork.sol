@@ -109,18 +109,18 @@ interface IV124AeroSlipRouter {
 
 library V124BaseAddresses {
     address internal constant WETH = 0x4200000000000000000000000000000000000006;
-    address internal constant USDC = 0x833589fcd6edb6e08f4c7c32d4f71b54bda02913;
+    address internal constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
-    address internal constant UNI_QUOTER = 0x3d4e44eb1374240ce5f1b871ab261cd16335b76a;
-    address internal constant UNI_ROUTER = 0x2626664c2603336e57b271c5c0b26f421741e481;
+    address internal constant UNI_QUOTER = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a;
+    address internal constant UNI_ROUTER = 0x2626664c2603336E57B271c5C0b26F421741e481;
 
-    address internal constant AERO_CLASSIC_ROUTER = 0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43;
-    address internal constant AERO_CLASSIC_FACTORY = 0x420dd381b31aef6683db6b902084cb0ffece40da;
-    address internal constant AERO_SLIP_ROUTER = 0xbe6d8f0d05cc4be24d5167a3ef062215be6d18a5;
-    address internal constant AERO_SLIP_QUOTER = 0x254cf9e1e6e233aa1ac962cb9b05b2cfeaae15b0;
+    address internal constant AERO_CLASSIC_ROUTER = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43;
+    address internal constant AERO_CLASSIC_FACTORY = 0x420DD381b31aEf6683db6B902084cB0FFECe40Da;
+    address internal constant AERO_SLIP_ROUTER = 0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5;
+    address internal constant AERO_SLIP_QUOTER = 0x254cF9E1E6e233aa1AC962CB9B05b2cfeAaE15b0;
 
-    address internal constant PANCAKE_QUOTER = 0xb048bbc1ee6b733fffcfb9e9cef7375518e25997;
-    address internal constant PANCAKE_ROUTER = 0x678aa4bf4e210cf2166753e054d5b7c31cc7fa86;
+    address internal constant PANCAKE_QUOTER = 0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997;
+    address internal constant PANCAKE_ROUTER = 0x678Aa4bF4E210cf2166753e054d5b7c31cc7fa86;
 }
 
 contract V124BridgeVault {

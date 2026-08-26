@@ -95,6 +95,40 @@ jobs:
         shell: bash
         run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
 
+      - name: Prepare Telethon pure-Python wheel dependencies
+        working-directory: /tmp/v320/android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.13 -m pip install --quiet --upgrade setuptools wheel
+          rm -rf app/pip-wheels
+          mkdir -p app/pip-wheels
+          python3.13 -m pip wheel --no-deps --no-build-isolation 'pyaes==1.6.1' --wheel-dir app/pip-wheels
+          test -s app/pip-wheels/pyaes-1.6.1-py3-none-any.whl
+          python3.13 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle')
+          s = p.read_text(encoding='utf-8')
+          needle = 'install("telethon==1.40.0")'
+          if needle not in s:
+              raise SystemExit('Telethon install line not found')
+          if 'project.file("pip-wheels").absolutePath' not in s:
+              lines = s.splitlines()
+              out = []
+              inserted = False
+              for line in lines:
+                  if not inserted and needle in line:
+                      indent = line[:len(line)-len(line.lstrip())]
+                      out.append(indent + 'options("--find-links", project.file("pip-wheels").absolutePath)')
+                      inserted = True
+                  out.append(line)
+              s = '\n'.join(out) + '\n'
+              p.write_text(s, encoding='utf-8')
+          PY
+          grep -q 'project.file("pip-wheels").absolutePath' app/build.gradle
+          sha256sum app/pip-wheels/pyaes-1.6.1-py3-none-any.whl | tee /tmp/v320-evidence/PYAES-WHEEL-SHA256.txt
+          printf 'PYAES_LOCAL_WHEEL_READY\n' | tee /tmp/v320-evidence/PYAES-WHEEL-GATE.txt
+
       - name: Build Chaquopy FULL MAIN release
         working-directory: /tmp/v320/android
         shell: bash
@@ -122,7 +156,7 @@ jobs:
           grep -q "package: name='ai.sinergy.smm.pro' versionCode='320' versionName='3.2.0'" /tmp/v320-evidence/AAPT-BADGING.txt
           for f in $(unzip -Z1 /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | grep -E '^res/[^/]+\.png$'); do h=$(unzip -p /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk "$f" | sha256sum | awk '{print $1}'); if [ "$h" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' ]; then echo "$f $h"; fi; done | tee /tmp/v320-evidence/PACKAGED-FINANCE-ICONS.txt
           test "$(grep -c '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' /tmp/v320-evidence/PACKAGED-FINANCE-ICONS.txt)" -ge 5
-          unzip -Z1 /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | grep -E 'chaquopy|python|telethon' | head -100 > /tmp/v320-evidence/PYTHON-PACKAGE-EVIDENCE.txt
+          unzip -Z1 /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | grep -E 'chaquopy|python|telethon|pyaes' | head -150 > /tmp/v320-evidence/PYTHON-PACKAGE-EVIDENCE.txt
           test -s /tmp/v320-evidence/PYTHON-PACKAGE-EVIDENCE.txt
 
       - name: Package canonical v3.2 source and static evidence
@@ -134,7 +168,7 @@ jobs:
           cp /tmp/v320/PORT_TZ_FULL_MAIN.md /tmp/v320-evidence/
           cp /tmp/v320/PRODUCT-MANIFEST.json /tmp/v320-evidence/
           sha256sum /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz > /tmp/v320-evidence/SHA256SUMS.txt
-          printf 'DELTA_SHA_PASS\nCORE_CONTRACT_PASS\nUI_PARITY_PASS\nWEBVIEW_E2E_PASS\nCHAQUOPY_GRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_320_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v320-evidence/STATIC-GATES.txt
+          printf 'DELTA_SHA_PASS\nCORE_CONTRACT_PASS\nUI_PARITY_PASS\nWEBVIEW_E2E_PASS\nPYAES_LOCAL_WHEEL_PASS\nCHAQUOPY_GRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_320_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v320-evidence/STATIC-GATES.txt
 
       - name: Install visual validator
         shell: bash

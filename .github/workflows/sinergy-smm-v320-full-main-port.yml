@@ -74,9 +74,10 @@ jobs:
           set -euo pipefail
           python -m pip install --quiet playwright
           if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          sed -i "s#/mnt/data/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png#/tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png#g" /tmp/v320/tests/web_e2e.py
           python /tmp/v320/tests/web_e2e.py | tee /tmp/v320-evidence/WEBVIEW-E2E.txt
           grep -q WEBVIEW_E2E_PASS /tmp/v320-evidence/WEBVIEW-E2E.txt
-          test -s /mnt/data/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png && cp /mnt/data/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png /tmp/v320-evidence/ || true
+          test -s /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png
 
       - uses: actions/setup-java@v4
         with:

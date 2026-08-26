@@ -1,0 +1,195 @@
+name: SINERGY SMM v3.2.0 FULL MAIN PORT
+
+on:
+  push:
+    branches: [sinergy-smm-v3-product-v31-rebuild]
+    paths:
+      - 'smm-v3-product-v32/**'
+      - '.github/workflows/sinergy-smm-v320-full-main-port.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  full-main-port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recover canonical v3.1.1 source and signing identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v311 /tmp/v320 /tmp/v320-evidence /tmp/delta.*
+          mkdir -p /tmp/v311 /tmp/v320 /tmp/v320-evidence
+          gh run download 32907313576 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.1.1-PRO-CANONICAL-RELEASE --dir /tmp/v311
+          echo 'afefce4768432d5b7fe3a8dc5b6871eabf6f14d4ac39f109db0255aa45c923cb  /tmp/v311/SINERGY-SMM-RELEASE-2026-CANONICAL.jks' | sha256sum -c -
+          test -s /tmp/v311/RECOVERY.txt
+          test -s /tmp/v311/SINERGY-SMM-v3.1.1-CANONICAL-SOURCE.tar.gz
+          tar -xzf /tmp/v311/SINERGY-SMM-v3.1.1-CANONICAL-SOURCE.tar.gz -C /tmp/v320
+
+      - name: Reconstruct and verify v3.2.0 FULL MAIN delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          D=smm-v3-product-v32
+          echo '0a02703917078e9d4aea67f484d1e32fc48583517511c78d17aa1a848f617581  delta.b64.part00' > /tmp/chunks.sha
+          echo '169961ddd098714e71a04c0b46445d4d7bdeb2a79c682269e8b34a8cc01c610c  delta.b64.part01' >> /tmp/chunks.sha
+          echo '9ae42c2af6104882a5e34fd3298a3d58f90586e10f112832f1c06ee1f4f4310f  delta.b64.part02' >> /tmp/chunks.sha
+          echo '91c0fec4474d86d8e192448c4046cd8f6d60d30d876623c3c444b7d72e9cab77  delta.b64.part03' >> /tmp/chunks.sha
+          echo 'b5443cf610419223d5099af4355d383887b11cf1f659eb84bc23b7d15528cb5a  delta.b64.part04' >> /tmp/chunks.sha
+          echo '5b131eba2948c366cca6a84938ad3cda2a99e33caa9f908ff3a5fea9e1fcd17f  delta.b64.part05' >> /tmp/chunks.sha
+          (cd "$D" && sha256sum -c /tmp/chunks.sha)
+          cat "$D"/delta.b64.part00 "$D"/delta.b64.part01 "$D"/delta.b64.part02 "$D"/delta.b64.part03 "$D"/delta.b64.part04 "$D"/delta.b64.part05 > /tmp/delta.b64
+          base64 -d /tmp/delta.b64 > /tmp/delta.tar.gz
+          echo 'b72de29bf83e32dda717e72f3db9a98d63a6fdd8033cf474707075ffdfdc9622  /tmp/delta.tar.gz' | sha256sum -c -
+          rm -rf /tmp/v320/backend /tmp/v320/tests
+          rm -f /tmp/v320/android/app/src/main/assets/www/js/action-registry.js
+          rm -f /tmp/v320/android/app/src/main/assets/www/data/action_registry.json
+          tar -xzf /tmp/delta.tar.gz -C /tmp/v320
+          grep -q "versionCode 320" /tmp/v320/android/app/build.gradle
+          grep -q "versionName '3.2.0'" /tmp/v320/android/app/build.gradle
+          grep -q "com.chaquo.python" /tmp/v320/android/app/build.gradle
+          grep -q "telethon==1.40.0" /tmp/v320/android/app/build.gradle
+          grep -q "FULL_MAIN_PORT" /tmp/v320/android/app/src/main/python/mobile_core.py
+          grep -q "FULL MAIN PORT" /tmp/v320/PORT_TZ_FULL_MAIN.md
+
+      - name: Core and UI parity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/v320/tests/contract.py | tee /tmp/v320-evidence/CORE-CONTRACT.txt
+          python /tmp/v320/tests/ui_contract.py | tee /tmp/v320-evidence/UI-PARITY.txt
+          grep -q CORE_CONTRACT_PASS /tmp/v320-evidence/CORE-CONTRACT.txt
+          grep -q UI_PARITY_PASS /tmp/v320-evidence/UI-PARITY.txt
+
+      - name: WebView browser E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet playwright
+          if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          python /tmp/v320/tests/web_e2e.py | tee /tmp/v320-evidence/WEBVIEW-E2E.txt
+          grep -q WEBVIEW_E2E_PASS /tmp/v320-evidence/WEBVIEW-E2E.txt
+          test -s /mnt/data/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png && cp /mnt/data/SINERGY-SMM-v3.2.0-FULL-MAIN-UI.png /tmp/v320-evidence/ || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Install Android SDK
+        shell: bash
+        run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Build Chaquopy FULL MAIN release
+        working-directory: /tmp/v320/android
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon clean :app:assembleRelease 2>&1 | tee /tmp/v320-evidence/GRADLE-BUILD.txt
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -s "$APK"
+
+      - name: Sign with canonical SINERGY-SMM key and audit APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          PASS=$(sed -n 's/^Store password: //p' /tmp/v311/RECOVERY.txt | head -1)
+          test -n "$PASS"
+          UNSIGNED=$(find /tmp/v320/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          "$BT/zipalign" -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.2.0-ALIGNED.apk
+          "$BT/apksigner" sign --ks /tmp/v311/SINERGY-SMM-RELEASE-2026-CANONICAL.jks --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk /tmp/SINERGY-SMM-v3.2.0-ALIGNED.apk
+          "$BT/apksigner" verify --verbose --print-certs /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | tee /tmp/v320-evidence/APKSIGNER-VERIFY.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/v320-evidence/APKSIGNER-VERIFY.txt
+          grep -qi '53b5a94f8cd794a849ce51277a95a1c1a6be24c56537b66239e7a0b00faef85b' /tmp/v320-evidence/APKSIGNER-VERIFY.txt
+          "$BT/aapt2" dump badging /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | tee /tmp/v320-evidence/AAPT-BADGING.txt
+          grep -q "package: name='ai.sinergy.smm.pro' versionCode='320' versionName='3.2.0'" /tmp/v320-evidence/AAPT-BADGING.txt
+          for f in $(unzip -Z1 /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | grep -E '^res/[^/]+\.png$'); do h=$(unzip -p /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk "$f" | sha256sum | awk '{print $1}'); if [ "$h" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' ]; then echo "$f $h"; fi; done | tee /tmp/v320-evidence/PACKAGED-FINANCE-ICONS.txt
+          test "$(grep -c '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' /tmp/v320-evidence/PACKAGED-FINANCE-ICONS.txt)" -ge 5
+          unzip -Z1 /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | grep -E 'chaquopy|python|telethon' | head -100 > /tmp/v320-evidence/PYTHON-PACKAGE-EVIDENCE.txt
+          test -s /tmp/v320-evidence/PYTHON-PACKAGE-EVIDENCE.txt
+
+      - name: Package canonical v3.2 source and static evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v320/android/.gradle /tmp/v320/android/app/build
+          tar --exclude='__pycache__' --exclude='SCREENSHOTS' -czf /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz -C /tmp/v320 .
+          cp /tmp/v320/PORT_TZ_FULL_MAIN.md /tmp/v320-evidence/
+          cp /tmp/v320/PRODUCT-MANIFEST.json /tmp/v320-evidence/
+          sha256sum /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz > /tmp/v320-evidence/SHA256SUMS.txt
+          printf 'DELTA_SHA_PASS\nCORE_CONTRACT_PASS\nUI_PARITY_PASS\nWEBVIEW_E2E_PASS\nCHAQUOPY_GRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_320_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v320-evidence/STATIC-GATES.txt
+
+      - name: Install visual validator
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          cat > /tmp/check_visual.py <<'PY'
+          import sys
+          from PIL import Image, ImageStat
+          im=Image.open(sys.argv[1]).convert('RGB'); w,h=im.size
+          crop=im.crop((0,max(140,int(h*.08)),w,min(h-150,int(h*.92))))
+          pix=list(crop.getdata())
+          nonblack=sum(max(x)>30 for x in pix)/len(pix)
+          bright=sum(max(x)>80 for x in pix)/len(pix)
+          std=max(ImageStat.Stat(crop).stddev)
+          print(f'VISUAL nonblack={nonblack:.6f} bright={bright:.6f} std={std:.3f}')
+          assert nonblack>0.10 and bright>0.02 and std>10
+          PY
+
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 FULL MAIN native Python runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb shell settings put global hide_error_dialogs 1
+            adb logcat -c
+            adb install -r /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk | tee /tmp/v320-evidence/ADB-INSTALL.txt
+            grep -q Success /tmp/v320-evidence/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v320-evidence/ADB-COLD-LAUNCH.txt
+            sleep 15
+            adb logcat -d > /tmp/v320-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v320-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v320-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v320-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/v320-evidence/LOGCAT-COLD.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v320-evidence/LOGCAT-COLD.txt
+            adb exec-out screencap -p > /tmp/v320-evidence/ANDROID-COLD.png
+            python /tmp/check_visual.py /tmp/v320-evidence/ANDROID-COLD.png | tee /tmp/v320-evidence/VISUAL-COLD.txt
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v320-evidence/ADB-RESTART.txt
+            sleep 10
+            adb logcat -d > /tmp/v320-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v320-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v320-evidence/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v320-evidence/LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/v320-evidence/ANDROID-RESTART.png
+            python /tmp/check_visual.py /tmp/v320-evidence/ANDROID-RESTART.png | tee /tmp/v320-evidence/VISUAL-RESTART.txt
+            printf 'SIGNED_ADB_INSTALL_PASS\nPYTHON_CORE_READY_PASS\nPYTHON_NATIVE_ACTION_STATE_PASS\nFIRST_FRAME_HOME_PASS\nPAGE_FINISHED_PASS\nNO_APP_ANR_FATAL_PASS\nVISUAL_COLD_PASS\nRESTART_PASS\n' > /tmp/v320-evidence/RUNTIME-GATES.txt
+
+      - name: Upload v3.2.0 FULL MAIN canonical release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-CANONICAL
+          path: /tmp/v320-evidence/*
+          if-no-files-found: warn
+          retention-days: 7

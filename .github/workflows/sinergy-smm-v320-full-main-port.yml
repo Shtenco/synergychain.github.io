@@ -83,6 +83,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -97,6 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3.13 --version | tee /tmp/v320-evidence/BUILD-PYTHON.txt
           gradle --no-daemon clean :app:assembleRelease 2>&1 | tee /tmp/v320-evidence/GRADLE-BUILD.txt
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           test -s "$APK"

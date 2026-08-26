@@ -1,0 +1,240 @@
+name: SINERGY SMM v3.3.0 Finance UX Release
+
+on:
+  push:
+    branches: [sinergy-smm-v33-finance-ux]
+    paths:
+      - 'smm-v3-product-v33/**'
+      - '.github/workflows/sinergy-smm-v330-finance-ux-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  v330-finance-ux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recover canonical v3.2 source and signing identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v320art /tmp/v311 /tmp/v330 /tmp/v330-evidence /tmp/v330-delta.*
+          mkdir -p /tmp/v320art /tmp/v311 /tmp/v330 /tmp/v330-evidence
+          gh run download 33006922520 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-CANONICAL --dir /tmp/v320art
+          test -s /tmp/v320art/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz
+          tar -xzf /tmp/v320art/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz -C /tmp/v330
+          gh run download 32907313576 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.1.1-PRO-CANONICAL-RELEASE --dir /tmp/v311
+          echo 'afefce4768432d5b7fe3a8dc5b6871eabf6f14d4ac39f109db0255aa45c923cb  /tmp/v311/SINERGY-SMM-RELEASE-2026-CANONICAL.jks' | sha256sum -c -
+          test -s /tmp/v311/RECOVERY.txt
+
+      - name: Reconstruct and verify v3.3 Finance UX delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          D=smm-v3-product-v33
+          cat > /tmp/v330-chunks.sha <<'EOF'
+          83b99c275b8ce164cd37d83a76899e5fe20bee1f451c63607d79f5f6334dcca1  delta.b64.part00
+          0b789a870fa0b6d6948e772345c94349ca0ceee6c7c1e56fdbb5ed9e23e2bebc  delta.b64.part01
+          de25c1a07197655b13fdc65b7bcc9868ec5506632857738b9c5d8bdebbd8f4f7  delta.b64.part02
+          f1268ac57a653c8c0b858e90a424acd7bceca39d8ff69d414e47a016c661f1aa  delta.b64.part03
+          ae9eab786a7bfcda761eeff18aefec2ab8b897d4afec00964dc511816a784f0b  delta.b64.part04
+          1a8304a0e22a49bd07fa68b2d9ba2bdf91cb2db71c1366415beb7c8a3f035b6f  delta.b64.part05
+          7d0820ebe9049944b1f6258ca4f427c08ba12708273f9f7c11f2b33cfb7afe31  delta.b64.part06
+          EOF
+          sed -i 's/^          //' /tmp/v330-chunks.sha
+          (cd "$D" && sha256sum -c /tmp/v330-chunks.sha)
+          cat "$D"/delta.b64.part0{0,1,2,3,4,5,6} > /tmp/v330-delta.b64
+          base64 -d /tmp/v330-delta.b64 > /tmp/v330-delta.tar.gz
+          echo 'de0c7925bdfdd769b28f7f7988490e76cdb4b80e366ef9892a4c5ecac993d7f4  /tmp/v330-delta.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/v330-delta.tar.gz -C /tmp/v330
+          grep -q "versionCode 330" /tmp/v330/android/app/build.gradle
+          grep -q "versionName '3.3.0'" /tmp/v330/android/app/build.gradle
+          test -s /tmp/v330/android/app/src/main/assets/www/data/help.json
+          grep -q -- '--green:#00ef73' /tmp/v330/android/app/src/main/assets/www/css/app.css
+          grep -q -- '--radius:24px' /tmp/v330/android/app/src/main/assets/www/css/app.css
+          grep -q 'my.telegram.org' /tmp/v330/android/app/src/main/assets/www/data/help.json
+          grep -q 'developers.facebook.com' /tmp/v330/android/app/src/main/assets/www/data/help.json
+          grep -q 'Phone Number ID' /tmp/v330/android/app/src/main/assets/www/data/help.json
+          printf 'V330_DELTA_AND_HELP_READY\n' | tee /tmp/v330-evidence/DELTA-HELP-GATE.txt
+
+      - name: Prove FULL MAIN execution core preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '89494581a13592d524f344159dd61268faedc5353b5168992e7dc542f3f10a7c  /tmp/v330/android/app/src/main/python/mobile_core.py' | sha256sum -c -
+          echo '9325e95c7ad3eb1ffa2ab48f7b3e28b6df7e8b56b9ef39b44e9c92b0c3e64b6a  /tmp/v330/android/app/src/main/python/schema.py' | sha256sum -c -
+          echo '879b2cb7a07f6a6c6c444dd878176067fa2293befa748150fbde1a79813b812b  /tmp/v330/android/app/src/main/assets/www/data/schema.json' | sha256sum -c -
+          printf 'FULL_MAIN_CORE_PRESERVED_EXCEPT_VERSION_METADATA\n' | tee /tmp/v330-evidence/CORE-PRESERVATION.txt
+
+      - name: Core, UI and onboarding contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/v330/tests/contract.py | tee /tmp/v330-evidence/CORE-CONTRACT.txt
+          python /tmp/v330/tests/ui_contract.py | tee /tmp/v330-evidence/UI-PARITY-HELP.txt
+          grep -q CORE_CONTRACT_PASS /tmp/v330-evidence/CORE-CONTRACT.txt
+          grep -q 'help=all-selectable-methods' /tmp/v330-evidence/UI-PARITY-HELP.txt
+          grep -q 'finance-design' /tmp/v330-evidence/UI-PARITY-HELP.txt
+          grep -q 'token-center' /tmp/v330-evidence/UI-PARITY-HELP.txt
+
+      - name: Finance UX browser E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet playwright
+          if command -v chromium >/dev/null; then :; elif command -v google-chrome >/dev/null; then sudo ln -sf "$(command -v google-chrome)" /usr/bin/chromium; else sudo apt-get update && sudo apt-get install -y chromium; fi
+          sed -i "s#/mnt/data/SINERGY-SMM-v3.3.0-FINANCE-UX-WEB.png#/tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-WEB.png#g" /tmp/v330/tests/web_e2e.py
+          python /tmp/v330/tests/web_e2e.py | tee /tmp/v330-evidence/WEBVIEW-E2E.txt
+          grep -q WEBVIEW_E2E_PASS /tmp/v330-evidence/WEBVIEW-E2E.txt
+          grep -q 'help-all' /tmp/v330-evidence/WEBVIEW-E2E.txt
+          grep -q 'fields-complete' /tmp/v330-evidence/WEBVIEW-E2E.txt
+          test -s /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-WEB.png
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Install Android SDK
+        shell: bash
+        run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Prepare Telethon pure-Python wheel
+        working-directory: /tmp/v330/android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.13 -m pip install --quiet --upgrade setuptools wheel
+          rm -rf app/pip-wheels
+          mkdir -p app/pip-wheels
+          python3.13 -m pip wheel --no-deps --no-build-isolation 'pyaes==1.6.1' --wheel-dir app/pip-wheels
+          test -s app/pip-wheels/pyaes-1.6.1-py3-none-any.whl
+          grep -q 'project.file("pip-wheels").absolutePath' app/build.gradle
+          grep -q 'telethon==1.40.0' app/build.gradle
+          grep -q '^import com\.chaquo\.python\.android\.AndroidPlatform;$' app/src/main/java/ai/sinergy/smm/MainActivity.java
+          sha256sum app/pip-wheels/pyaes-1.6.1-py3-none-any.whl | tee /tmp/v330-evidence/PYAES-WHEEL-SHA256.txt
+
+      - name: Build Chaquopy Finance UX release
+        working-directory: /tmp/v330/android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.13 --version | tee /tmp/v330-evidence/BUILD-PYTHON.txt
+          gradle --no-daemon clean :app:assembleRelease 2>&1 | tee /tmp/v330-evidence/GRADLE-BUILD.txt
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          test -s "$APK"
+
+      - name: Sign with canonical SINERGY key and audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          PASS=$(sed -n 's/^Store password: //p' /tmp/v311/RECOVERY.txt | head -1)
+          test -n "$PASS"
+          UNSIGNED=$(find /tmp/v330/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          "$BT/zipalign" -P 16 -f 4 "$UNSIGNED" /tmp/SINERGY-SMM-v3.3.0-ALIGNED.apk
+          "$BT/apksigner" sign --ks /tmp/v311/SINERGY-SMM-RELEASE-2026-CANONICAL.jks --ks-key-alias sinergy-smm-release --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk /tmp/SINERGY-SMM-v3.3.0-ALIGNED.apk
+          "$BT/apksigner" verify --verbose --print-certs /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | tee /tmp/v330-evidence/APKSIGNER-VERIFY.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/v330-evidence/APKSIGNER-VERIFY.txt
+          grep -qi '53b5a94f8cd794a849ce51277a95a1c1a6be24c56537b66239e7a0b00faef85b' /tmp/v330-evidence/APKSIGNER-VERIFY.txt
+          "$BT/aapt2" dump badging /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | tee /tmp/v330-evidence/AAPT-BADGING.txt
+          grep -q "package: name='ai.sinergy.smm.pro' versionCode='330' versionName='3.3.0'" /tmp/v330-evidence/AAPT-BADGING.txt
+          unzip -Z1 /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | grep -q 'assets/www/data/help.json'
+          unzip -p /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk assets/www/data/help.json | grep -q 'my.telegram.org'
+          unzip -p /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk assets/www/data/help.json | grep -q 'Phone Number ID'
+          for f in $(unzip -Z1 /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | grep -E '^res/[^/]+\.png$'); do h=$(unzip -p /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk "$f" | sha256sum | awk '{print $1}'); if [ "$h" = '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' ]; then echo "$f $h"; fi; done | tee /tmp/v330-evidence/PACKAGED-FINANCE-ICONS.txt
+          test "$(grep -c '7fcb15af804c98d61e7baec76848caac8b1638e774c9795ebda83396082a6ac6' /tmp/v330-evidence/PACKAGED-FINANCE-ICONS.txt)" -ge 5
+          unzip -Z1 /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | grep -E 'chaquopy|python|telethon|pyaes' | head -150 > /tmp/v330-evidence/PYTHON-PACKAGE-EVIDENCE.txt
+          test -s /tmp/v330-evidence/PYTHON-PACKAGE-EVIDENCE.txt
+
+      - name: Package v3.3 canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v330/android/.gradle /tmp/v330/android/app/build
+          tar --exclude='__pycache__' --exclude='.gradle' --exclude='android/.gradle' --exclude='android/app/build' -czf /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SOURCE.tar.gz -C /tmp/v330 .
+          cp /tmp/v330/PORT_TZ_FULL_MAIN.md /tmp/v330-evidence/
+          cp /tmp/v330/PRODUCT-MANIFEST.json /tmp/v330-evidence/
+          sha256sum /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SOURCE.tar.gz > /tmp/v330-evidence/SHA256SUMS.txt
+          printf 'DELTA_SHA_PASS\nFULL_MAIN_CORE_PRESERVED_PASS\nCORE_CONTRACT_PASS\nUI_HELP_PARITY_PASS\nFINANCE_DESIGN_PASS\nTOKEN_CENTER_PASS\nWEBVIEW_E2E_PASS\nCHAQUOPY_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_330_PASS\nHELP_PACKAGED_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v330-evidence/STATIC-GATES.txt
+
+      - name: Install visual validator
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          cat > /tmp/check_visual.py <<'PY'
+          import sys
+          from PIL import Image, ImageStat
+          im=Image.open(sys.argv[1]).convert('RGB'); w,h=im.size
+          crop=im.crop((0,max(140,int(h*.08)),w,min(h-150,int(h*.92))))
+          pix=list(crop.getdata())
+          nonblack=sum(max(x)>30 for x in pix)/len(pix)
+          bright=sum(max(x)>80 for x in pix)/len(pix)
+          green=sum((g>70 and g>r*1.25 and g>b*1.15) for r,g,b in pix)/len(pix)
+          std=max(ImageStat.Stat(crop).stddev)
+          print(f'VISUAL nonblack={nonblack:.6f} bright={bright:.6f} green={green:.6f} std={std:.3f}')
+          assert nonblack>0.10 and bright>0.02 and green>0.003 and std>10
+          PY
+
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 Finance UX native runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb shell settings put global hide_error_dialogs 1
+            adb logcat -c
+            adb install -r /tmp/v330-evidence/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | tee /tmp/v330-evidence/ADB-INSTALL.txt
+            grep -q Success /tmp/v330-evidence/ADB-INSTALL.txt
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-evidence/ADB-COLD-LAUNCH.txt
+            sleep 15
+            adb logcat -d > /tmp/v330-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v330-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v330-evidence/LOGCAT-COLD.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/v330-evidence/LOGCAT-COLD.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v330-evidence/LOGCAT-COLD.txt
+            adb exec-out screencap -p > /tmp/v330-evidence/ANDROID-COLD.png
+            python /tmp/check_visual.py /tmp/v330-evidence/ANDROID-COLD.png | tee /tmp/v330-evidence/VISUAL-COLD.txt
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window.xml /tmp/v330-evidence/UI-DUMP-COLD.xml >/dev/null 2>&1 || true
+            if test -s /tmp/v330-evidence/UI-DUMP-COLD.xml; then ! grep -Eqi "Quickstep.*responding|System UI.*responding|isn't responding" /tmp/v330-evidence/UI-DUMP-COLD.xml; fi
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-evidence/ADB-RESTART.txt
+            sleep 10
+            adb logcat -d > /tmp/v330-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-evidence/LOGCAT-RESTART.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v330-evidence/LOGCAT-RESTART.txt
+            ! grep -Eqi 'FATAL EXCEPTION|ANR in ai\.sinergy\.smm\.pro|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v330-evidence/LOGCAT-RESTART.txt
+            adb exec-out screencap -p > /tmp/v330-evidence/ANDROID-RESTART.png
+            python /tmp/check_visual.py /tmp/v330-evidence/ANDROID-RESTART.png | tee /tmp/v330-evidence/VISUAL-RESTART.txt
+            printf 'SIGNED_ADB_INSTALL_PASS\nPYTHON_CORE_READY_PASS\nPYTHON_NATIVE_ACTION_STATE_PASS\nFIRST_FRAME_HOME_PASS\nPAGE_FINISHED_PASS\nNO_APP_ANR_FATAL_PASS\nVISUAL_FINANCE_UX_COLD_PASS\nRESTART_PASS\n' > /tmp/v330-evidence/RUNTIME-GATES.txt
+
+      - name: Upload v3.3 Finance UX canonical release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.3.0-FINANCE-UX-CANONICAL
+          path: /tmp/v330-evidence/*
+          if-no-files-found: warn
+          retention-days: 7

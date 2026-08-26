@@ -95,6 +95,16 @@ jobs:
         shell: bash
         run: sdkmanager 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0'
 
+      - name: Patch Chaquopy AndroidPlatform namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN=/tmp/v320/android/app/src/main/java/ai/sinergy/smm/MainActivity.java
+          sed -i 's/import com\.chaquo\.python\.AndroidPlatform;/import com.chaquo.python.android.AndroidPlatform;/' "$MAIN"
+          grep -q '^import com\.chaquo\.python\.android\.AndroidPlatform;$' "$MAIN"
+          ! grep -q '^import com\.chaquo\.python\.AndroidPlatform;$' "$MAIN"
+          printf 'CHAQUOPY_ANDROID_PLATFORM_API_READY\n' | tee /tmp/v320-evidence/CHAQUOPY-ANDROID-PLATFORM-GATE.txt
+
       - name: Prepare Telethon pure-Python wheel dependencies
         working-directory: /tmp/v320/android
         shell: bash
@@ -170,7 +180,7 @@ jobs:
           cp /tmp/v320/PORT_TZ_FULL_MAIN.md /tmp/v320-evidence/
           cp /tmp/v320/PRODUCT-MANIFEST.json /tmp/v320-evidence/
           sha256sum /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SIGNED.apk /tmp/v320-evidence/SINERGY-SMM-v3.2.0-FULL-MAIN-PORT-SOURCE.tar.gz > /tmp/v320-evidence/SHA256SUMS.txt
-          printf 'DELTA_SHA_PASS\nCORE_CONTRACT_PASS\nUI_PARITY_PASS\nWEBVIEW_E2E_PASS\nPYAES_LOCAL_WHEEL_PASS\nCHAQUOPY_GRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_320_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v320-evidence/STATIC-GATES.txt
+          printf 'DELTA_SHA_PASS\nCORE_CONTRACT_PASS\nUI_PARITY_PASS\nWEBVIEW_E2E_PASS\nCHAQUOPY_ANDROID_PLATFORM_API_PASS\nPYAES_LOCAL_WHEEL_PASS\nCHAQUOPY_GRADLE_RELEASE_PASS\nCANONICAL_KEY_REUSED_PASS\nAPK_SIGNATURE_PASS\nPACKAGE_320_PASS\nPACKAGED_FINANCE_ICON_PASS\n' > /tmp/v320-evidence/STATIC-GATES.txt
 
       - name: Install visual validator
         shell: bash

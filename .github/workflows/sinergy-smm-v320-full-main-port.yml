@@ -109,9 +109,9 @@ jobs:
           from pathlib import Path
           p = Path('app/build.gradle')
           s = p.read_text(encoding='utf-8')
-          needle = 'install("telethon==1.40.0")'
+          needle = 'telethon==1.40.0'
           if needle not in s:
-              raise SystemExit('Telethon install line not found')
+              raise SystemExit('Telethon dependency not found')
           if 'project.file("pip-wheels").absolutePath' not in s:
               lines = s.splitlines()
               out = []
@@ -122,6 +122,8 @@ jobs:
                       out.append(indent + 'options("--find-links", project.file("pip-wheels").absolutePath)')
                       inserted = True
                   out.append(line)
+              if not inserted:
+                  raise SystemExit('Telethon dependency line not patched')
               s = '\n'.join(out) + '\n'
               p.write_text(s, encoding='utf-8')
           PY

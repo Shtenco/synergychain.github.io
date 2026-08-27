@@ -67,18 +67,15 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            set -e
-            APK=/tmp/v330-final/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk
             adb shell settings put global hide_error_dialogs 1
             adb logcat -c
-            adb install -r "$APK" | tee /tmp/v330-final/ADB-INSTALL-FINAL.txt
+            adb install -r /tmp/v330-final/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk | tee /tmp/v330-final/ADB-INSTALL-FINAL.txt
             grep -q Success /tmp/v330-final/ADB-INSTALL-FINAL.txt
 
             adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-final/ADB-COLD-FINAL.txt
             sleep 15
-            PID=$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')
-            test -n "$PID"
-            adb logcat --pid="$PID" -d > /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            test -n "$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')"
+            adb logcat --pid="$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')" -d > /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
             adb logcat -d > /tmp/v330-final/SYSTEM-LOGCAT-COLD-FINAL.txt
             grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
             grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
@@ -96,9 +93,8 @@ jobs:
             adb logcat -c
             adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-final/ADB-RESTART-FINAL.txt
             sleep 12
-            PID=$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')
-            test -n "$PID"
-            adb logcat --pid="$PID" -d > /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            test -n "$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')"
+            adb logcat --pid="$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')" -d > /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
             adb logcat -d > /tmp/v330-final/SYSTEM-LOGCAT-RESTART-FINAL.txt
             grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
             grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt

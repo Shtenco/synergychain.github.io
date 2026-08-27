@@ -1,0 +1,124 @@
+name: SINERGY SMM v3.3.0 Final Runtime Gate
+
+on:
+  push:
+    branches: [sinergy-smm-v33-finance-ux]
+    paths:
+      - '.github/workflows/sinergy-smm-v330-runtime-final.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Download signed v3.3 canonical APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v330-final
+          mkdir -p /tmp/v330-final
+          gh run download 33018000335 --repo Shtenco/synergychain.github.io --name SINERGY-SMM-v3.3.0-FINANCE-UX-CANONICAL --dir /tmp/v330-final
+          APK=/tmp/v330-final/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk
+          test -s "$APK"
+          grep -q "package: name='ai.sinergy.smm.pro' versionCode='330' versionName='3.3.0'" /tmp/v330-final/AAPT-BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' /tmp/v330-final/APKSIGNER-VERIFY.txt
+          grep -qi '53b5a94f8cd794a849ce51277a95a1c1a6be24c56537b66239e7a0b00faef85b' /tmp/v330-final/APKSIGNER-VERIFY.txt
+          sha256sum "$APK" | tee /tmp/v330-final/FINAL-APK-SHA256.txt
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: android-actions/setup-android@v3
+
+      - name: Install visual validator
+        shell: bash
+        run: |
+          python -m pip install --quiet pillow
+          cat > /tmp/check_visual.py <<'PY'
+          import sys
+          from PIL import Image, ImageStat
+          im=Image.open(sys.argv[1]).convert('RGB'); w,h=im.size
+          crop=im.crop((0,max(140,int(h*.08)),w,min(h-150,int(h*.92))))
+          pix=list(crop.getdata())
+          nonblack=sum(max(x)>30 for x in pix)/len(pix)
+          bright=sum(max(x)>80 for x in pix)/len(pix)
+          green=sum((g>70 and g>r*1.25 and g>b*1.15) for r,g,b in pix)/len(pix)
+          std=max(ImageStat.Stat(crop).stddev)
+          print(f'VISUAL nonblack={nonblack:.6f} bright={bright:.6f} green={green:.6f} std={std:.3f}')
+          assert nonblack>0.10 and bright>0.02 and green>0.003 and std>10
+          PY
+
+      - name: Enable KVM
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: API35 app-scoped cold and restart runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            set -e
+            APK=/tmp/v330-final/SINERGY-SMM-v3.3.0-FINANCE-UX-SIGNED.apk
+            adb shell settings put global hide_error_dialogs 1
+            adb logcat -c
+            adb install -r "$APK" | tee /tmp/v330-final/ADB-INSTALL-FINAL.txt
+            grep -q Success /tmp/v330-final/ADB-INSTALL-FINAL.txt
+
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-final/ADB-COLD-FINAL.txt
+            sleep 15
+            PID=$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')
+            test -n "$PID"
+            adb logcat --pid="$PID" -d > /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            adb logcat -d > /tmp/v330-final/SYSTEM-LOGCAT-COLD-FINAL.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            ! grep -Eqi 'FATAL EXCEPTION|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v330-final/APP-LOGCAT-COLD-FINAL.txt
+            ! grep -Eqi 'ANR in ai\.sinergy\.smm\.pro' /tmp/v330-final/SYSTEM-LOGCAT-COLD-FINAL.txt
+            adb exec-out screencap -p > /tmp/v330-final/ANDROID-COLD-FINAL.png
+            python /tmp/check_visual.py /tmp/v330-final/ANDROID-COLD-FINAL.png | tee /tmp/v330-final/VISUAL-COLD-FINAL.txt
+            adb shell uiautomator dump /sdcard/window-cold.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window-cold.xml /tmp/v330-final/UI-DUMP-COLD-FINAL.xml >/dev/null 2>&1 || true
+            if test -s /tmp/v330-final/UI-DUMP-COLD-FINAL.xml; then ! grep -Eqi "Quickstep.*responding|System UI.*responding|isn't responding" /tmp/v330-final/UI-DUMP-COLD-FINAL.xml; fi
+
+            adb shell am force-stop ai.sinergy.smm.pro
+            adb logcat -c
+            adb shell am start -W -n ai.sinergy.smm.pro/ai.sinergy.smm.MainActivity | tee /tmp/v330-final/ADB-RESTART-FINAL.txt
+            sleep 12
+            PID=$(adb shell pidof -s ai.sinergy.smm.pro | tr -d '\r')
+            test -n "$PID"
+            adb logcat --pid="$PID" -d > /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            adb logcat -d > /tmp/v330-final/SYSTEM-LOGCAT-RESTART-FINAL.txt
+            grep -q 'SINERGY_SMM.*PYTHON_CORE_READY FULL_MAIN_PORT' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            grep -q 'SINERGY_SMM.*PYTHON_ACTION_OK.*state' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            grep -q 'SINERGY_SMM.*FIRST_FRAME home' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            grep -q 'SINERGY_SMM.*PAGE_FINISHED' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            ! grep -Eqi 'FATAL EXCEPTION|PYTHON_CORE_FATAL|PYTHON_ACTION_FATAL|SINERGY_SMM.*WEB_FATAL' /tmp/v330-final/APP-LOGCAT-RESTART-FINAL.txt
+            ! grep -Eqi 'ANR in ai\.sinergy\.smm\.pro' /tmp/v330-final/SYSTEM-LOGCAT-RESTART-FINAL.txt
+            adb exec-out screencap -p > /tmp/v330-final/ANDROID-RESTART-FINAL.png
+            python /tmp/check_visual.py /tmp/v330-final/ANDROID-RESTART-FINAL.png | tee /tmp/v330-final/VISUAL-RESTART-FINAL.txt
+            adb shell uiautomator dump /sdcard/window-restart.xml >/dev/null 2>&1 || true
+            adb pull /sdcard/window-restart.xml /tmp/v330-final/UI-DUMP-RESTART-FINAL.xml >/dev/null 2>&1 || true
+            if test -s /tmp/v330-final/UI-DUMP-RESTART-FINAL.xml; then ! grep -Eqi "Quickstep.*responding|System UI.*responding|isn't responding" /tmp/v330-final/UI-DUMP-RESTART-FINAL.xml; fi
+
+            printf 'SIGNED_ADB_INSTALL_PASS\nAPP_PID_COLD_LOG_PASS\nAPP_PID_RESTART_LOG_PASS\nPYTHON_CORE_READY_PASS\nPYTHON_NATIVE_ACTION_STATE_PASS\nFIRST_FRAME_HOME_PASS\nPAGE_FINISHED_PASS\nNO_APP_FATAL_PASS\nNO_APP_ANR_PASS\nVISUAL_FINANCE_UX_COLD_PASS\nVISUAL_FINANCE_UX_RESTART_PASS\nCOLD_AND_RESTART_PASS\n' > /tmp/v330-final/FINAL-RUNTIME-GATES.txt
+
+      - name: Upload final green v3.3 APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-SMM-v3.3.0-FINANCE-UX-FINAL-GREEN
+          path: /tmp/v330-final/*
+          if-no-files-found: error
+          retention-days: 7

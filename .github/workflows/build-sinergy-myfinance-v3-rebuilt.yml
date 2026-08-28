@@ -1,0 +1,430 @@
+name: Build device-tested SINERGY-MYFINANCE V3 rebuilt
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified V3 interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v3ui
+          cat android/rebuilt-v3/ui.part* | base64 --decode > /tmp/v3ui/index.html.xz
+          xz -t /tmp/v3ui/index.html.xz
+          xz -dc /tmp/v3ui/index.html.xz > /tmp/v3ui/index.html
+          test "$(sha256sum /tmp/v3ui/index.html | cut -d' ' -f1)" = "ab6a070405a1d2fd11c3689b6ee6b5a656f967bca1ac3299ff08a92d15dd5fc0"
+          grep -q 'SINERGY-MYFINANCE' /tmp/v3ui/index.html
+          grep -q 'Отображение приватных ключей отключено' /tmp/v3ui/index.html
+          test "$(grep -c 'function showPrivateKey' /tmp/v3ui/index.html)" -eq 1
+          echo "V3 UI bytes=$(wc -c < /tmp/v3ui/index.html)" | tee /tmp/UI-VERIFICATION.txt
+          sha256sum /tmp/v3ui/index.html | tee -a /tmp/UI-VERIFICATION.txt
+
+      - name: Generate clean hardened Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/SINERGY-MYFINANCE-V3
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/app/src/main/java/ai/sinergy/myfinance"
+          mkdir -p "$ROOT/app/src/main/res/values" "$ROOT/app/src/main/res/xml" "$ROOT/app/src/main/res/drawable"
+          mkdir -p "$ROOT/app/src/main/assets/www"
+          mkdir -p "$ROOT/app/src/androidTest/java/ai/sinergy/myfinance"
+          cp /tmp/v3ui/index.html "$ROOT/app/src/main/assets/www/index.html"
+
+          cat > "$ROOT/settings.gradle" <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = 'SINERGY-MYFINANCE-V3'
+          include ':app'
+          EOF
+
+          cat > "$ROOT/build.gradle" <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.1.0' apply false
+          }
+          EOF
+
+          cat > "$ROOT/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          android.enableJetifier=false
+          EOF
+
+          cat > "$ROOT/app/build.gradle" <<'EOF'
+          plugins { id 'com.android.application' }
+
+          android {
+              namespace 'ai.sinergy.myfinance'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId 'ai.sinergy.myfinance'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 5
+                  versionName '3.0.0'
+                  testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+              }
+
+              buildTypes {
+                  debug {
+                      applicationIdSuffix '.instrumented'
+                      versionNameSuffix '-instrumented'
+                  }
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                      debuggable false
+                      jniDebuggable false
+                      renderscriptDebuggable false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              packaging {
+                  resources.excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE*', 'META-INF/NOTICE*']
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core:1.13.1'
+              implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+              androidTestImplementation 'androidx.test:core:1.5.0'
+              androidTestImplementation 'androidx.test:runner:1.5.2'
+              androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+          }
+          EOF
+
+          cat > "$ROOT/app/proguard-rules.pro" <<'EOF'
+          -keep class ai.sinergy.myfinance.** { *; }
+          EOF
+
+          cat > "$ROOT/app/src/main/AndroidManifest.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="false"
+                  android:fullBackupContent="false"
+                  android:dataExtractionRules="@xml/data_extraction_rules"
+                  android:usesCleartextTraffic="false"
+                  android:networkSecurityConfig="@xml/network_security_config"
+                  android:label="SINERGY-MYFINANCE"
+                  android:icon="@drawable/ic_launcher"
+                  android:roundIcon="@drawable/ic_launcher"
+                  android:theme="@style/AppTheme"
+                  android:hardwareAccelerated="true"
+                  android:enableOnBackInvokedCallback="true"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > "$ROOT/app/src/main/res/values/strings.xml" <<'EOF'
+          <resources><string name="app_name">SINERGY-MYFINANCE</string></resources>
+          EOF
+
+          cat > "$ROOT/app/src/main/res/values/styles.xml" <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:colorAccent">#00E664</item>
+                  <item name="android:navigationBarColor">#000000</item>
+                  <item name="android:statusBarColor">#000000</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > "$ROOT/app/src/main/res/xml/network_security_config.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="false" />
+          </network-security-config>
+          EOF
+
+          cat > "$ROOT/app/src/main/res/xml/data_extraction_rules.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <data-extraction-rules>
+              <cloud-backup disableIfNoEncryptionCapabilities="true"><exclude domain="root" path="." /></cloud-backup>
+              <device-transfer><exclude domain="root" path="." /></device-transfer>
+          </data-extraction-rules>
+          EOF
+
+          cat > "$ROOT/app/src/main/res/drawable/ic_launcher.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#020408" android:pathData="M0,0h108v108h-108z" />
+              <path android:fillColor="#00E664" android:pathData="M24,24h60v12h-42v12h36v12h-36v12h42v12h-60z" />
+          </vector>
+          EOF
+
+          cat > "$ROOT/app/src/main/java/ai/sinergy/myfinance/MainActivity.java" <<'EOF'
+          package ai.sinergy.myfinance;
+
+          import android.app.Activity;
+          import android.graphics.Color;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public final class MainActivity extends Activity {
+              public static final int WEBVIEW_ID = 0x53494E;
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+                  getWindow().setStatusBarColor(Color.BLACK);
+                  getWindow().setNavigationBarColor(Color.BLACK);
+
+                  webView = new WebView(this);
+                  webView.setId(WEBVIEW_ID);
+                  webView.setBackgroundColor(Color.rgb(2, 4, 8));
+                  webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                  configure(webView.getSettings());
+                  webView.setWebViewClient(new LocalOnlyClient());
+                  WebView.setWebContentsDebuggingEnabled(false);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                      WebView.startSafeBrowsing(this, ignored -> { });
+                  }
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/www/index.html");
+              }
+
+              private static void configure(WebSettings settings) {
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(false);
+                  settings.setAllowContentAccess(false);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowFileAccessFromFileURLs(false);
+                  settings.setAllowUniversalAccessFromFileURLs(false);
+                  settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+                  settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+                  settings.setSaveFormData(false);
+                  settings.setSupportMultipleWindows(false);
+                  settings.setJavaScriptCanOpenWindowsAutomatically(false);
+                  settings.setMediaPlaybackRequiresUserGesture(true);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.setSafeBrowsingEnabled(true);
+              }
+
+              private static final class LocalOnlyClient extends WebViewClient {
+                  @Override
+                  public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                      String url = request.getUrl().toString();
+                      return !(url.startsWith("file:///android_asset/www/") || url.equals("about:blank"));
+                  }
+
+                  @SuppressWarnings("deprecation")
+                  @Override
+                  public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                      return !(url.startsWith("file:///android_asset/www/") || url.equals("about:blank"));
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) webView.goBack();
+                  else super.onBackPressed();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.stopLoading();
+                      webView.loadUrl("about:blank");
+                      webView.clearHistory();
+                      webView.removeAllViews();
+                      webView.destroy();
+                      webView = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+          cat > "$ROOT/app/src/androidTest/java/ai/sinergy/myfinance/LaunchInstrumentedTest.java" <<'EOF'
+          package ai.sinergy.myfinance;
+
+          import static org.junit.Assert.assertNotNull;
+          import static org.junit.Assert.assertTrue;
+
+          import android.webkit.WebView;
+          import androidx.test.core.app.ActivityScenario;
+          import androidx.test.ext.junit.runners.AndroidJUnit4;
+          import org.junit.Test;
+          import org.junit.runner.RunWith;
+
+          @RunWith(AndroidJUnit4.class)
+          public final class LaunchInstrumentedTest {
+              @Test
+              public void activityCreatesHardenedWebView() {
+                  try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                      scenario.onActivity(activity -> {
+                          WebView webView = activity.findViewById(MainActivity.WEBVIEW_ID);
+                          assertNotNull(webView);
+                          assertTrue(webView.getSettings().getJavaScriptEnabled());
+                          assertTrue(!webView.getSettings().getAllowUniversalAccessFromFileURLs());
+                      });
+                  }
+              }
+          }
+          EOF
+
+          cat > "$ROOT/README-RELEASE.txt" <<'EOF'
+          SINERGY-MYFINANCE v3.0.0 rebuilt release
+          Package: ai.sinergy.myfinance
+          Version code: 5
+          This APK is a clean Android build, not a patched binary APK.
+          The preserved V3 interface includes multichain/watch-only screens.
+          Native on-chain transaction signing is intentionally disabled in this rebuilt shell because the previously saved native V3 source archive was corrupted.
+          Private-key display/export is disabled. Do not treat demo balances or transfer screens as proof of an on-chain transaction.
+          EOF
+
+          echo "$ROOT" > /tmp/project-root.txt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" "emulator" "system-images;android-34;google_apis;x86_64"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2.1'
+
+      - name: Resolve dependencies and build APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          gradle -p "$ROOT" --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > /tmp/RELEASE-DEPENDENCIES.txt
+          grep 'org.bouncycastle:bcprov-jdk18on:1.84' /tmp/RELEASE-DEPENDENCIES.txt | tee /tmp/BOUNCY-CASTLE-VERIFY.txt
+          gradle -p "$ROOT" --no-daemon clean assembleDebug assembleRelease --stacktrace --warning-mode all 2>&1 | tee /tmp/ANDROID-BUILD.log
+          UNSIGNED="$(find "$ROOT/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*release*.apk' | head -n1)"
+          test -f "$UNSIGNED"
+          echo "$UNSIGNED" > /tmp/unsigned-apk.txt
+
+      - name: Align sign and verify release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$(cat /tmp/project-root.txt)"
+          OUT="$ROOT/final-release"
+          mkdir -p "$OUT"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$OUT/SINERGY-MYFINANCE-release.jks" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias sinergy-myfinance-release \
+            -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 9125 \
+            -dname "CN=SINERGY-MYFINANCE Release, OU=Mobile Security, O=SINERGY, L=Kostanay, ST=Kostanay, C=KZ"
+          "$BT/zipalign" -f -p 4 "$(cat /tmp/unsigned-apk.txt)" "$OUT/aligned.apk"
+          "$BT/zipalign" -c -p 4 "$OUT/aligned.apk" | tee "$OUT/ZIPALIGN-VERIFY.txt"
+          "$BT/apksigner" sign \
+            --ks "$OUT/SINERGY-MYFINANCE-release.jks" \
+            --ks-key-alias sinergy-myfinance-release \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" "$OUT/aligned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APKSIGNER-VERIFY.txt"
+          "$BT/aapt" dump badging "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APK-BADGING.txt"
+          unzip -t "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/APK-ZIP-INTEGRITY.txt"
+          sha256sum "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/SINERGY-MYFINANCE-v3.0.0-SHA256.txt"
+          keytool -printcert -jarfile "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/SIGNING-CERTIFICATE.txt"
+          printf '%s\n' "$PASS" > "$OUT/SIGNING-KEY-PASSWORD.txt"
+          cp "$ROOT/README-RELEASE.txt" /tmp/UI-VERIFICATION.txt /tmp/RELEASE-DEPENDENCIES.txt /tmp/BOUNCY-CASTLE-VERIFY.txt /tmp/ANDROID-BUILD.log "$OUT/"
+          rm -f "$OUT/aligned.apk"
+
+      - name: Instrumentation and final release install on Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            ROOT="$(cat /tmp/project-root.txt)"
+            OUT="$ROOT/final-release"
+            gradle -p "$ROOT" --no-daemon connectedDebugAndroidTest --stacktrace 2>&1 | tee "$OUT/INSTRUMENTATION-TESTS.log"
+            adb uninstall ai.sinergy.myfinance.instrumented || true
+            adb install "$OUT/SINERGY-MYFINANCE-v3.0.0.apk" | tee "$OUT/ADB-INSTALL.txt"
+            adb shell am start -W -n ai.sinergy.myfinance/.MainActivity | tee "$OUT/ACTIVITY-LAUNCH.txt"
+            sleep 5
+            adb shell pm path ai.sinergy.myfinance | tee -a "$OUT/ADB-INSTALL.txt"
+            adb shell dumpsys package ai.sinergy.myfinance | grep -E 'versionCode=|versionName=' | tee -a "$OUT/ADB-INSTALL.txt"
+            test -n "$(adb shell pidof ai.sinergy.myfinance)"
+            adb exec-out screencap -p > "$OUT/DEVICE-SCREENSHOT.png"
+            if adb logcat -d '*:E' | grep -E 'FATAL EXCEPTION.*ai.sinergy.myfinance|Process: ai.sinergy.myfinance' > "$OUT/FATAL-LOGCAT.txt"; then
+              cat "$OUT/FATAL-LOGCAT.txt"
+              exit 1
+            else
+              echo 'No fatal exception for ai.sinergy.myfinance' > "$OUT/FATAL-LOGCAT.txt"
+            fi
+
+      - name: Package final delivery
+        if: always()
+        shell: bash
+        run: |
+          ROOT="$(cat /tmp/project-root.txt)"
+          if [ -d "$ROOT/final-release" ]; then
+            cd "$ROOT"
+            zip -9 -r /tmp/SINERGY-MYFINANCE-v3.0.0-delivery.zip final-release README-RELEASE.txt >/dev/null
+          fi
+
+      - name: Upload final installable release
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-MYFINANCE-v3.0.0-FINAL-INSTALLABLE
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            /tmp/SINERGY-MYFINANCE-V3/final-release/*
+            /tmp/SINERGY-MYFINANCE-v3.0.0-delivery.zip

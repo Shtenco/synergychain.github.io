@@ -1,4 +1,29 @@
 (()=>{
+ const responsive=document.createElement('style');
+ responsive.dataset.v19ResponsiveGuard='true';
+ responsive.textContent=`
+ html,body,.shell{max-width:100%;overflow-x:hidden}
+ .topbar,.nav,.ticker,.hero,.page-hero,.section,.section-head,.grid,.conflict,.flow,.matrix,.quote-stage{min-width:0;max-width:100%}
+ .hero>*,.page-hero>*,.section-head>*,.grid>*,.conflict>*,.flow>*{min-width:0}
+ .nav{min-width:0;max-width:100%;contain:inline-size}
+ .nav a{flex:0 0 auto}
+ .ticker{width:100%;max-width:100vw;overflow:hidden;contain:inline-size}
+ .ticker-track{max-width:none}
+ .kicker,.eyebrow,.hero h1,.page-hero h1,.section h2,.quote-stage blockquote,.card h3,.conflict-card h3,.matrix b{max-width:100%;overflow-wrap:anywhere;word-break:normal}
+ @media(max-width:720px){
+   .nav{width:calc(100vw - 34px);overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scrollbar-width:none}
+   .nav::-webkit-scrollbar{display:none}
+   .ticker{overflow:hidden}
+   .kicker,.eyebrow{font-size:9px;letter-spacing:.105em;line-height:1.35}
+   .hero h1,.page-hero h1{font-size:clamp(44px,13vw,72px);line-height:.88;letter-spacing:-.06em}
+   .section h2{font-size:clamp(36px,11.3vw,60px);line-height:.96;letter-spacing:-.045em}
+   .quote-stage blockquote{font-size:clamp(34px,10.5vw,56px);line-height:.96}
+   .lead{font-size:17px}
+   .radar-node{font-size:7px;padding:5px 6px;letter-spacing:.05em}
+   .rn2{right:0}.rn4{left:0}
+ }
+ `;
+ document.head.appendChild(responsive);
  const root=document.documentElement;
  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));

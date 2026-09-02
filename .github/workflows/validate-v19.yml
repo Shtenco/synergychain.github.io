@@ -1,0 +1,74 @@
+name: Validate SINERGY V19
+
+on:
+  push:
+    branches: [portal-v19-polittech-v14]
+    paths: ['v19/**','scripts/*v19*.mjs','.github/workflows/validate-v19.yml']
+  pull_request:
+    paths: ['v19/**','scripts/*v19*.mjs','.github/workflows/validate-v19.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structural:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check v19/assets/v19.js
+          node --check v19/data/v14-map.js
+          node --check scripts/validate-v19.mjs
+          node --check scripts/build-v19-standalone.mjs
+          node --check scripts/smoke-v19.mjs
+          node --check scripts/smoke-v19-offline.mjs
+      - name: Validate V19 structure
+        run: node scripts/validate-v19.mjs
+      - name: Build standalone
+        run: node scripts/build-v19-standalone.mjs v19 release/V19_STANDALONE
+
+  chromium:
+    runs-on: ubuntu-latest
+    needs: structural
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start site
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 > /tmp/v19.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/v19/ >/dev/null && exit 0; sleep 1; done
+          cat /tmp/v19.log
+          exit 1
+      - name: HTTP smoke
+        run: node scripts/smoke-v19.mjs
+      - name: Build standalone
+        run: node scripts/build-v19-standalone.mjs v19 release/V19_STANDALONE
+      - name: FILE protocol smoke
+        run: node scripts/smoke-v19-offline.mjs
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v19-visual-smoke
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload standalone
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SINERGY-V19-POLITTECH-STANDALONE-GREEN
+          path: release/V19_STANDALONE
+          if-no-files-found: error
+          retention-days: 30

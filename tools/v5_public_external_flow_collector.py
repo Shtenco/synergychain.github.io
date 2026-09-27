@@ -454,38 +454,71 @@ def discover_aero_pools(base_end):
 
 def collect_swaps(pools, base_start, base_end):
     selected=[p for p in pools if p["created_block"]<=base_end]
-    meta={p["pool"]:p for p in selected}
     rows=[]
-    ts_cache={}
-    for p in selected:
-        logs=blockscout_logs_chunked(
-            address=p["pool"], from_block=base_start, to_block=base_end,
-            topic0=TOPIC_SWAP, initial_chunk=100_000, min_chunk=1
-        )
-        for raw in logs:
-            l=decode_blockscout_log(raw)
-            vals=decode(["uint256","uint256","uint256","uint256"],bytes.fromhex(l["data"][2:]))
-            bn=parse_intish(l["blockNumber"])
-            def fallback(n=bn):
-                if n not in ts_cache:
-                    for attempt in range(6):
-                        try:
-                            ts_cache[n]=base_block_timestamp(n)
-                            break
-                        except requests.HTTPError as e:
-                            if getattr(e.response,"status_code",None)!=429 or attempt==5:
-                                raise
-                            time.sleep(2**attempt)
-                return ts_cache[n]
-            ts=log_timestamp(l,fallback)
-            li=parse_intish(l["logIndex"])
+    seen=set()
+
+    # Use Blockscout v2 cursor pagination per pool.  The legacy v1 getLogs
+    # endpoint rate-limits even single-block pool queries from GitHub runners.
+    # Synthetic cursor jumps directly below base_end; pagination stops once
+    # block_number falls below base_start.
+    for pool_i,p in enumerate(selected):
+        for item in blockscout_v2_address_logs(p["pool"], start_block=base_end):
+            bn=int(item.get("block_number") or 0)
+            if bn < base_start:
+                break
+            if bn > base_end:
+                continue
+            topics=item.get("topics") or []
+            if not topics or topics[0].lower()!=TOPIC_SWAP.lower():
+                continue
+
+            tx=(item.get("transaction_hash") or "").lower()
+            li=int(item.get("index") or 0)
+            key=(tx,li)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            decoded=item.get("decoded") or {}
+            params=decoded.get("parameters") or []
+            values={x.get("name"):x.get("value") for x in params}
+            if all(k in values for k in ("amount0In","amount1In","amount0Out","amount1Out")):
+                a0in=int(values["amount0In"])
+                a1in=int(values["amount1In"])
+                a0out=int(values["amount0Out"])
+                a1out=int(values["amount1Out"])
+            else:
+                data=item.get("data","0x")
+                a0in,a1in,a0out,a1out=decode(
+                    ["uint256","uint256","uint256","uint256"],
+                    bytes.fromhex(data[2:])
+                )
+
+            ts_text=item.get("block_timestamp")
+            if not ts_text:
+                raise RuntimeError(f"v2 swap log missing block_timestamp: {tx}:{li}")
+            from datetime import datetime
+            ts=int(datetime.fromisoformat(ts_text.replace("Z","+00:00")).timestamp())
+
             rows.append({
-                "protocol":"AerodromeV2","chain_id":8453,"block_number":bn,"timestamp":ts,
-                "tx_hash":l["transactionHash"],"log_index":li,
-                "pool":l["address"].lower(),"token0":p["token0"],"token1":p["token1"],
-                "stable":p["stable"],"amount0_in":str(vals[0]),"amount1_in":str(vals[1]),
-                "amount0_out":str(vals[2]),"amount1_out":str(vals[3])
+                "protocol":"AerodromeV2",
+                "chain_id":8453,
+                "block_number":bn,
+                "timestamp":ts,
+                "tx_hash":tx,
+                "log_index":li,
+                "pool":p["pool"].lower(),
+                "token0":p["token0"],
+                "token1":p["token1"],
+                "stable":p["stable"],
+                "amount0_in":str(a0in),
+                "amount1_in":str(a1in),
+                "amount0_out":str(a0out),
+                "amount1_out":str(a1out),
             })
+        # Gentle cross-pool pacing in addition to the helper's 429 backoff.
+        time.sleep(0.12)
+
     rows.sort(key=lambda r:(r["block_number"],r["log_index"]))
     return rows,selected
 

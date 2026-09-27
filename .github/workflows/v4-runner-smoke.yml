@@ -1,0 +1,22 @@
+name: V4 public runner smoke
+
+on:
+  push:
+    branches:
+      - ci/v4-runner-smoke
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner smoke
+        run: |
+          python3 --version
+          uname -a
+          echo "PUBLIC RUNNER SMOKE: PASS"

@@ -120,8 +120,9 @@ def blockscout_logs(address, start, end, topic0=None):
             "action":"getLogs",
             "fromBlock":str(a),
             "toBlock":str(b),
-            "address":address,
         }
+        if address:
+            params["address"] = address
         if topic0:
             params["topic0"] = topic0
         try:
@@ -291,30 +292,35 @@ def collect_aerodrome(start,end):
     swap_topic="0x"+Web3.keccak(text="Swap(address,address,uint256,uint256,uint256,uint256)").hex()
     rows=[]
     seen=set()
-    for idx,pool in enumerate(selected,1):
-        m=meta[pool]
-        raw=blockscout_logs(pool,start,end,swap_topic)
-        for x in raw:
-            key=(x["transactionHash"],x["logIndex"])
-            if key in seen: continue
-            seen.add(key)
-            data=(x.get("data") or "0x")[2:]
-            if len(data)<64*4:
-                continue
-            words=[int(data[i:i+64],16) for i in range(0,64*4,64)]
-            rows.append({
-                "protocol":"Aerodrome","chain":"base","pool":pool,
-                "block_number":int(x["blockNumber"],16),"timestamp":int(x["timeStamp"],16),
-                "tx_hash":x["transactionHash"],"log_index":int(x["logIndex"],16),
-                "amount0_in":str(words[0]),"amount1_in":str(words[1]),
-                "amount0_out":str(words[2]),"amount1_out":str(words[3]),
-                "token0":m["token0"],"token1":m["token1"],
-                "dec0":m["dec0"],"dec1":m["dec1"],"stable":m["stable"],
-                "token0_priced_symbol":CORE_TOKENS.get(m["token0"],{}).get("symbol",""),
-                "token1_priced_symbol":CORE_TOKENS.get(m["token1"],{}).get("symbol",""),
-            })
-        if idx%25==0:
-            print("AERO_PROGRESS",idx,"/",len(selected),"rows",len(rows),flush=True)
+    selected_set={p.lower() for p in selected}
+    raw_all=blockscout_logs(None,start,end,swap_topic)
+    print("AERO_GLOBAL_SWAP_LOGS",len(raw_all),"selected_pools",len(selected),flush=True)
+    for x in raw_all:
+        pool=Web3.to_checksum_address(x["address"])
+        if pool.lower() not in selected_set:
+            continue
+        m=meta.get(pool)
+        if not m:
+            continue
+        key=(x["transactionHash"],x["logIndex"])
+        if key in seen:
+            continue
+        seen.add(key)
+        data=(x.get("data") or "0x")[2:]
+        if len(data)<64*4:
+            continue
+        words=[int(data[i:i+64],16) for i in range(0,64*4,64)]
+        rows.append({
+            "protocol":"Aerodrome","chain":"base","pool":pool,
+            "block_number":int(x["blockNumber"],16),"timestamp":int(x["timeStamp"],16),
+            "tx_hash":x["transactionHash"],"log_index":int(x["logIndex"],16),
+            "amount0_in":str(words[0]),"amount1_in":str(words[1]),
+            "amount0_out":str(words[2]),"amount1_out":str(words[3]),
+            "token0":m["token0"],"token1":m["token1"],
+            "dec0":m["dec0"],"dec1":m["dec1"],"stable":m["stable"],
+            "token0_priced_symbol":CORE_TOKENS.get(m["token0"],{}).get("symbol",""),
+            "token1_priced_symbol":CORE_TOKENS.get(m["token1"],{}).get("symbol",""),
+        })
     keys=["protocol","chain","pool","block_number","timestamp","tx_hash","log_index",
           "amount0_in","amount1_in","amount0_out","amount1_out","token0","token1","dec0","dec1","stable",
           "token0_priced_symbol","token1_priced_symbol"]

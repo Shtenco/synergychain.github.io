@@ -45,18 +45,53 @@ def fetch_blocks():
     rows=[]; urls=[]
     for chunk in range((START_BLOCK//1000)*1000,(END_BLOCK//1000)*1000+1,1000):
         url=f"{XATU_ROOT}/{chunk}.parquet"; urls.append(url)
-        tab=pq.read_table(io.BytesIO(get(url).content),columns=["block_date_time","block_number","gas_used","gas_limit","base_fee_per_gas"])
+        tab=pq.read_table(io.BytesIO(get(url).content),columns=["block_date_time","block_number","gas_used","base_fee_per_gas"])
         d=tab.to_pydict()
         for i,n0 in enumerate(d["block_number"]):
             n=int(n0)
             if START_BLOCK<=n<=END_BLOCK:
-                rows.append({"block_number":n,"timestamp":epoch_seconds(d["block_date_time"][i]),"gas_used":int(d["gas_used"][i]),"gas_limit":int(d["gas_limit"][i]),"base_fee_per_gas":int(d["base_fee_per_gas"][i])})
+                rows.append({"block_number":n,"timestamp":epoch_seconds(d["block_date_time"][i]),"gas_used":int(d["gas_used"][i]),"base_fee_per_gas":int(d["base_fee_per_gas"][i])})
     rows.sort(key=lambda x:x["block_number"])
     nums=[x["block_number"] for x in rows]
     assert len(rows)==BLOCK_COUNT
     assert nums[0]==START_BLOCK and nums[-1]==END_BLOCK
     assert all(b==a+1 for a,b in zip(nums,nums[1:]))
     return rows,urls
+
+def fetch_rpc_gas_limits(blocks):
+    endpoint="https://ethereum-rpc.publicnode.com"
+    by_number={b["block_number"]:b for b in blocks}
+    for start in range(0,len(blocks),100):
+        batch=blocks[start:start+100]
+        payload=[{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":[hex(b["block_number"]),False],"id":b["block_number"]} for b in batch]
+        last=None
+        for attempt in range(6):
+            try:
+                r=S.post(endpoint,json=payload,timeout=60)
+                if r.status_code==429:
+                    time.sleep(min(2**attempt,15)); continue
+                r.raise_for_status()
+                data=r.json()
+                if not isinstance(data,list): raise RuntimeError(f"non-batch RPC response: {data}")
+                got={int(x["id"]):x.get("result") for x in data if "id" in x}
+                for b in batch:
+                    n=b["block_number"]; x=got.get(n)
+                    if not x: raise RuntimeError(f"missing RPC block {n}")
+                    ts=int(x["timestamp"],16); gas_used=int(x["gasUsed"],16); base=int(x["baseFeePerGas"],16); gas_limit=int(x["gasLimit"],16)
+                    if ts!=b["timestamp"]: raise RuntimeError(f"timestamp mismatch {n}: Xatu={b['timestamp']} RPC={ts}")
+                    if gas_used!=b["gas_used"]: raise RuntimeError(f"gasUsed mismatch {n}: Xatu={b['gas_used']} RPC={gas_used}")
+                    if base!=b["base_fee_per_gas"]: raise RuntimeError(f"baseFee mismatch {n}: Xatu={b['base_fee_per_gas']} RPC={base}")
+                    if gas_limit<=0: raise RuntimeError(f"invalid gasLimit {n}: {gas_limit}")
+                    by_number[n]["gas_limit"]=gas_limit
+                break
+            except Exception as e:
+                last=e
+                time.sleep(min(2**attempt,15))
+        else:
+            raise RuntimeError(f"RPC gasLimit batch failed at {batch[0]['block_number']}: {last!r}")
+        time.sleep(.05)
+    assert all("gas_limit" in b and b["gas_limit"]>0 for b in blocks)
+    return {"source":endpoint,"method":"eth_getBlockByNumber","batch_size":100,"cross_checked_fields":["timestamp","gasUsed","baseFeePerGas"]}
 
 def iso(ts): return datetime.fromtimestamp(ts,timezone.utc).isoformat().replace("+00:00","Z")
 
@@ -168,6 +203,7 @@ def fetch_prices(blocks):
 def main():
     OUT.mkdir(exist_ok=True)
     blocks,urls=fetch_blocks()
+    rpc_provenance=fetch_rpc_gas_limits(blocks)
     prices,prov=fetch_prices(blocks)
     csv_path=OUT/"ethereum_23544921_23557920_exact_gas_real_prices.csv"
     fields=["block_number","timestamp","gas_used","gas_limit","base_fee_per_gas","base_fee_gwei"]+[f"{a}_usd" for a in ASSETS]
@@ -177,7 +213,7 @@ def main():
             r=dict(b); r["base_fee_gwei"]=b["base_fee_per_gas"]/1e9
             for a in ASSETS: r[f"{a}_usd"]=prices[a][i]
             w.writerow(r)
-    manifest={"classification":"PUBLIC RAW HISTORICAL INPUTS ONLY — NO PRIVATE V4 ECONOMIC FORMULAS","ethereum_blocks":{"start":START_BLOCK,"end":END_BLOCK,"count":len(blocks),"contiguous":True,"timestamp_start":blocks[0]["timestamp"],"timestamp_end":blocks[-1]["timestamp"],"xatu_partitions":urls},"market_inputs":{"assets":list(ASSETS),"factor_mapped_assets":[],"provenance":prov,"alignment":"last fully completed 1-minute candle; causal only"},"gas_input":{"exact_fields":["block_date_time","gas_used","gas_limit","base_fee_per_gas"]}}
+    manifest={"classification":"PUBLIC RAW HISTORICAL INPUTS ONLY — NO PRIVATE V4 ECONOMIC FORMULAS","ethereum_blocks":{"start":START_BLOCK,"end":END_BLOCK,"count":len(blocks),"contiguous":True,"timestamp_start":blocks[0]["timestamp"],"timestamp_end":blocks[-1]["timestamp"],"xatu_partitions":urls},"market_inputs":{"assets":list(ASSETS),"factor_mapped_assets":[],"provenance":prov,"alignment":"last fully completed 1-minute candle; causal only"},"gas_input":{"xatu_exact_fields":["block_date_time","gas_used","base_fee_per_gas"],"rpc_exact_fields":["gasLimit"],"rpc_provenance":rpc_provenance,"cross_source_validation":"timestamp/gasUsed/baseFeePerGas must match Xatu exactly"}}
     (OUT/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
     assert len(blocks)==13000 and len(prov)==10
     assert all(v["future_candle_violations"]==0 and v["min_alignment_age_seconds"]>=0 for v in prov.values())

@@ -1,0 +1,38 @@
+name: V4 archive RPC probe
+
+on:
+  push:
+    branches:
+      - ci/v4-rpc-probe
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe archive RPC
+        run: |
+          python3 - <<'PY'
+          import json, requests, time
+          endpoint="https://ethereum-rpc.publicnode.com"
+          nums=[23544921,23550000,23557920]
+          payload=[{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":[hex(n),False],"id":n} for n in nums]
+          t=time.time()
+          r=requests.post(endpoint,json=payload,timeout=30)
+          print("HTTP",r.status_code,"elapsed",time.time()-t)
+          print(r.text[:5000])
+          r.raise_for_status()
+          data=r.json()
+          assert isinstance(data,list)
+          got={int(x["id"]):x.get("result") for x in data}
+          for n in nums:
+              x=got.get(n)
+              assert x is not None, n
+              print(n, int(x["timestamp"],16), int(x["gasLimit"],16), int(x["gasUsed"],16), int(x["baseFeePerGas"],16))
+          print("ARCHIVE RPC PROBE: PASS")
+          PY

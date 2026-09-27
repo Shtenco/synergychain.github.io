@@ -19,6 +19,8 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install web3 requests
+      - name: Validate collector syntax
+        run: python3 -m py_compile tools/v5_public_flow_collector.py
       - name: Collect Across and Aerodrome events
         run: python3 tools/v5_public_flow_collector.py
       - name: Validate raw event evidence

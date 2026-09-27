@@ -303,34 +303,81 @@ def collect_across(urls, chain_id, spoke, start, end):
     add_timestamps(urls,rows)
     return rows
 
+def selector(signature):
+    return "0x" + keccak(text=signature).hex()[:8]
+
+def encode_u256(n):
+    return hex(int(n))[2:].rjust(64,"0")
+
+def eth_call_latest(to, data):
+    return rpc(BASE_RPCS,"eth_call",[{"to":to,"data":data},"latest"])
+
+def rpc_batch_eth_call(calls, batch_size=100):
+    urls=BASE_RPCS
+    errors=[]
+    for url in urls:
+        try:
+            out=[]
+            for start in range(0,len(calls),batch_size):
+                chunk=calls[start:start+batch_size]
+                payload=[
+                    {"jsonrpc":"2.0","id":start+i+1,"method":"eth_call",
+                     "params":[{"to":to,"data":data},"latest"]}
+                    for i,(to,data) in enumerate(chunk)
+                ]
+                r=S.post(url,json=payload,timeout=90)
+                r.raise_for_status()
+                rows=r.json()
+                if not isinstance(rows,list):
+                    raise RuntimeError(rows)
+                by_id={int(x["id"]):x for x in rows}
+                for i in range(len(chunk)):
+                    item=by_id[start+i+1]
+                    if "error" in item:
+                        raise RuntimeError(item["error"])
+                    out.append(item["result"])
+                time.sleep(0.05)
+            return out
+        except Exception as e:
+            errors.append(f"{url}: {e!r}")
+    raise RuntimeError("batch eth_call failed: "+" | ".join(errors))
+
 def discover_aero_pools(base_end):
-    pools_by_addr={}
-    # Discover only pools where token0 or token1 is a proven-price token.
-    for token in sorted(SUPPORTED_BASE_INPUTS):
-        t=topic_address(token)
-        for pos in ("topic1","topic2"):
-            kwargs={
-                "address":AERO_FACTORY,
-                "from_block":AERO_FACTORY_DEPLOY,
-                "to_block":base_end,
-                "topic0":TOPIC_POOL_CREATED,
-                pos:t,
-                f"topic0_{pos[-1]}_opr":"and",
-                "initial_chunk":500_000,
-                "min_chunk":5_000,
-            }
-            rows=blockscout_logs_chunked(**kwargs)
-            for raw in rows:
-                l=decode_blockscout_log(raw)
-                token0=topic_addr(l["topics"][1]); token1=topic_addr(l["topics"][2])
-                stable=bool(int(l["topics"][3],16))
-                pool,idx=decode(["address","uint256"],bytes.fromhex(l["data"][2:]))
-                pools_by_addr[pool.lower()]={
-                    "pool":pool.lower(),"token0":token0,"token1":token1,"stable":stable,
-                    "factory_index":int(idx),"created_block":parse_intish(l["blockNumber"]),
-                    "selected_for_pricing":True
-                }
-    return sorted(pools_by_addr.values(),key=lambda x:x["pool"])
+    # Enumerate the factory state directly instead of scanning 33M historical
+    # blocks for PoolCreated. Current enumeration may include pools created
+    # after the replay window; those are harmless because only Swap logs inside
+    # [base_start, base_end] are counted.
+    length_raw=eth_call_latest(AERO_FACTORY,selector("allPoolsLength()"))
+    length=int(length_raw,16)
+    pool_calls=[
+        (AERO_FACTORY, selector("allPools(uint256)") + encode_u256(i))
+        for i in range(length)
+    ]
+    pool_results=rpc_batch_eth_call(pool_calls)
+    addresses=["0x"+x[-40:].lower() for x in pool_results]
+
+    meta_calls=[]
+    for addr in addresses:
+        meta_calls.extend([
+            (addr,selector("token0()")),
+            (addr,selector("token1()")),
+            (addr,selector("stable()")),
+        ])
+    meta=rpc_batch_eth_call(meta_calls)
+
+    pools=[]
+    for i,addr in enumerate(addresses):
+        t0="0x"+meta[3*i][-40:].lower()
+        t1="0x"+meta[3*i+1][-40:].lower()
+        stable=bool(int(meta[3*i+2],16))
+        if t0 in SUPPORTED_BASE_INPUTS or t1 in SUPPORTED_BASE_INPUTS:
+            pools.append({
+                "pool":addr,"token0":t0,"token1":t1,"stable":stable,
+                "factory_index":i,
+                "created_block":0,
+                "selected_for_pricing":True,
+            })
+    return pools
 
 
 def collect_swaps(pools, base_start, base_end):

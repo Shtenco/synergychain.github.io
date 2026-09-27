@@ -274,7 +274,8 @@ def discover_aero_pools(base_end):
         t=topic_address(token)
         for pos in ("topic1","topic2"):
             params={"module":"logs","action":"getLogs","fromBlock":str(AERO_FACTORY_DEPLOY),"toBlock":str(base_end),
-                    "address":AERO_FACTORY,"topic0":TOPIC_POOL_CREATED,pos:t}
+                    "address":AERO_FACTORY,"topic0":TOPIC_POOL_CREATED,pos:t,
+                    f"topic0_{pos[-1]}_opr":"and"}
             rows=blockscout(params).get("result",[])
             if not isinstance(rows,list):
                 continue

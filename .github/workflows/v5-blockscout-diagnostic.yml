@@ -1,0 +1,12 @@
+name: V5 Blockscout diagnostic
+on:
+  push:
+    branches: [ci/v5-external-flow]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/v5_blockscout_diagnostic.py

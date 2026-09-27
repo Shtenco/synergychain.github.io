@@ -17,7 +17,7 @@ jobs:
       - name: Install
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+          python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]" "eth-hash[pycryptodome]"
       - name: Collect raw on-chain events
         run: python3 tools/v5_public_external_flow_collector.py
       - name: Validate

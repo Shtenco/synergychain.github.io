@@ -32,6 +32,7 @@ BASE_AERO = "0x940181a94A35A4569E4529A3CDfB74e38FD98631".lower()
 SUPPORTED_BASE_INPUTS = {BASE_USDC, BASE_WETH, BASE_AERO}
 
 OUT = Path("v5_public_raw")
+V4_PUBLIC_CSV = Path("evidence/v4/ethereum_23544921_23557920_exact_gas_real_prices.csv")
 S = requests.Session()
 S.headers.update({"User-Agent":"SYNERGY-V5-public-event-collector/1.0"})
 BASE_BLOCKSCOUT = "https://base.blockscout.com/api"
@@ -85,6 +86,12 @@ def eth_block_timestamp(block_number):
 def topic_address(addr):
     return "0x" + "0"*24 + addr.lower().replace("0x","")
 
+def parse_intish(v):
+    if isinstance(v, int):
+        return v
+    s=str(v)
+    return int(s,16) if s.startswith("0x") else int(s)
+
 def decode_blockscout_log(x):
     # Normalize legacy Blockscout/Etherscan-compatible log object to eth_getLogs shape.
     return {
@@ -94,7 +101,27 @@ def decode_blockscout_log(x):
         "blockNumber": x.get("blockNumber") or x.get("block_number"),
         "transactionHash": x.get("transactionHash") or x.get("transaction_hash"),
         "logIndex": x.get("logIndex") or x.get("log_index") or "0x0",
+        "timeStamp": x.get("timeStamp") or x.get("timestamp") or x.get("time_stamp"),
     }
+
+def load_v4_timestamp_map():
+    if not V4_PUBLIC_CSV.is_file():
+        raise RuntimeError(f"missing public V4 evidence CSV: {V4_PUBLIC_CSV}")
+    out={}
+    with V4_PUBLIC_CSV.open(newline="",encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            out[int(r["block_number"])]=int(r["timestamp"])
+    if len(out)!=13000:
+        raise RuntimeError(f"bad V4 public timestamp map size: {len(out)}")
+    return out
+
+def log_timestamp(raw, fallback=None):
+    v=raw.get("timeStamp") or raw.get("timestamp") or raw.get("time_stamp")
+    if v not in (None,""):
+        return parse_intish(v)
+    if fallback is not None:
+        return fallback()
+    raise RuntimeError("Blockscout log has no timestamp and no fallback")
 
 
 OLD_DEPOSIT_SIG = "V3FundsDeposited(address,address,uint256,uint256,uint256,uint32,uint32,uint32,uint32,address,address,address,bytes)"
@@ -188,7 +215,7 @@ def decode_deposit(log, chain_id):
     destination=int(log["topics"][1],16)
     deposit_id=int(log["topics"][2],16)
     tx=log["transactionHash"]
-    block=int(log["blockNumber"],16)
+    block=parse_intish(log["blockNumber"])
     if t0==TOPIC_OLD_DEPOSIT.lower():
         vals=decode(
             ["address","address","uint256","uint256","uint32","uint32","uint32","address","address","bytes"],
@@ -258,8 +285,7 @@ def discover_aero_pools(base_end):
                 pool,idx=decode(["address","uint256"],bytes.fromhex(l["data"][2:]))
                 pools_by_addr[pool.lower()]={
                     "pool":pool.lower(),"token0":token0,"token1":token1,"stable":stable,
-                    "factory_index":int(idx),"created_block":int(l["blockNumber"],16)
-                    if str(l["blockNumber"]).startswith("0x") else int(l["blockNumber"]),
+                    "factory_index":int(idx),"created_block":parse_intish(l["blockNumber"]),
                     "selected_for_pricing":True
                 }
     return sorted(pools_by_addr.values(),key=lambda x:x["pool"])
@@ -275,12 +301,22 @@ def collect_swaps(pools, base_start, base_end):
         for raw in logs:
             l=decode_blockscout_log(raw)
             vals=decode(["uint256","uint256","uint256","uint256"],bytes.fromhex(l["data"][2:]))
-            bn=int(l["blockNumber"],16) if str(l["blockNumber"]).startswith("0x") else int(l["blockNumber"])
-            if bn not in ts_cache:
-                ts_cache[bn]=base_block_timestamp(bn)
-            li=int(l["logIndex"],16) if str(l["logIndex"]).startswith("0x") else int(l["logIndex"])
+            bn=parse_intish(l["blockNumber"])
+            def fallback(n=bn):
+                if n not in ts_cache:
+                    for attempt in range(6):
+                        try:
+                            ts_cache[n]=base_block_timestamp(n)
+                            break
+                        except requests.HTTPError as e:
+                            if getattr(e.response,"status_code",None)!=429 or attempt==5:
+                                raise
+                            time.sleep(2**attempt)
+                return ts_cache[n]
+            ts=log_timestamp(l,fallback)
+            li=parse_intish(l["logIndex"])
             rows.append({
-                "protocol":"AerodromeV2","chain_id":8453,"block_number":bn,"timestamp":ts_cache[bn],
+                "protocol":"AerodromeV2","chain_id":8453,"block_number":bn,"timestamp":ts,
                 "tx_hash":l["transactionHash"],"log_index":li,
                 "pool":l["address"].lower(),"token0":p["token0"],"token1":p["token1"],
                 "stable":p["stable"],"amount0_in":str(vals[0]),"amount1_in":str(vals[1]),
@@ -300,29 +336,44 @@ def main():
     base_start=base_block_by_time(START_TS,"after")
     base_end=base_block_by_time(END_TS,"before")
 
+    v4_ts_map=load_v4_timestamp_map()
+
     eth_logs_raw=[]
     for topic in (TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT):
         eth_logs_raw.extend(eth_logs(ETH_SPOKE,ETH_START,ETH_END,topic0=topic))
-    eth_across=[decode_deposit(decode_blockscout_log(x),1) for x in eth_logs_raw]
-    eth_ts_cache={}
-    for row in eth_across:
+    eth_across=[]
+    for raw in eth_logs_raw:
+        norm=decode_blockscout_log(raw)
+        row=decode_deposit(norm,1)
         n=int(row["block_number"])
-        if n not in eth_ts_cache:
-            eth_ts_cache[n]=eth_block_timestamp(n)
-        row["timestamp"]=eth_ts_cache[n]
+        if n not in v4_ts_map:
+            raise RuntimeError(f"Ethereum Across event outside V4 block map: {n}")
+        row["timestamp"]=v4_ts_map[n]
+        eth_across.append(row)
 
     base_logs_raw=[]
     for topic in (TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT):
         base_logs_raw.extend(base_logs(BASE_SPOKE,base_start,base_end,topic0=topic))
-    base_across=[decode_deposit(decode_blockscout_log(x),8453) for x in base_logs_raw]
-    for row in base_across:
-        row["timestamp"]=int(row.get("quote_timestamp") or 0)
+    base_across=[]
     base_ts_cache={}
-    for row in base_across:
+    for raw in base_logs_raw:
+        norm=decode_blockscout_log(raw)
+        row=decode_deposit(norm,8453)
         n=int(row["block_number"])
-        if n not in base_ts_cache:
-            base_ts_cache[n]=base_block_timestamp(n)
-        row["timestamp"]=base_ts_cache[n]
+        def fallback(n=n):
+            if n not in base_ts_cache:
+                # Small fallback only when the log itself omitted timeStamp.
+                for attempt in range(6):
+                    try:
+                        base_ts_cache[n]=base_block_timestamp(n)
+                        break
+                    except requests.HTTPError as e:
+                        if getattr(e.response,"status_code",None)!=429 or attempt==5:
+                            raise
+                        time.sleep(2**attempt)
+            return base_ts_cache[n]
+        row["timestamp"]=log_timestamp(norm,fallback)
+        base_across.append(row)
 
     across=sorted(eth_across+base_across,key=lambda r:(r["timestamp"],r["origin_chain_id"],r["block_number"]))
     # Keep only the Ethereum<->Base corridor for the observed bridge lower bound.

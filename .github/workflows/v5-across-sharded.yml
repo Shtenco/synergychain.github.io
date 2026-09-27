@@ -1,0 +1,41 @@
+name: V5 Across sharded collector
+
+on:
+  push:
+    branches: [ci/v5-across-sharded]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        chain: [ethereum, base]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      CHAIN: ${{ matrix.chain }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Collect Across chain shard
+        run: python3 tools/v5_across_shard.py
+      - name: Validate
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path("v5_across_shard")
+          m=json.loads((p/"manifest.json").read_text())
+          assert m["rows"] > 0
+          assert (p/"across_events.csv").is_file()
+          print("V5 ACROSS SHARD PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-across-${{ matrix.chain }}
+          path: v5_across_shard/
+          retention-days: 30

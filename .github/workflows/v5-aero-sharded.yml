@@ -1,0 +1,44 @@
+name: V5 Aerodrome sharded collector
+
+on:
+  push:
+    branches: [ci/v5-aero-sharded]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_TOTAL: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Collect Aerodrome shard
+        run: python3 tools/v5_aerodrome_shard.py
+      - name: Validate shard
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path("v5_aero_shard")
+          m=json.loads((p/"manifest.json").read_text())
+          assert m["shard_total"] == 8
+          assert (p/"aerodrome_swaps.csv").is_file()
+          assert (p/"aerodrome_pools.csv").is_file()
+          assert 0 <= m["scan_coverage_fraction"] <= 1
+          print("V5 AERO SHARD GATE: PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-aero-shard-${{ matrix.shard }}
+          path: v5_aero_shard/
+          retention-days: 30

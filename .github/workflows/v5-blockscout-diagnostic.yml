@@ -2,6 +2,9 @@ name: V5 Blockscout diagnostic
 on:
   push:
     branches: [ci/v5-external-flow]
+    paths:
+      - "tools/v5_blockscout_diagnostic.py"
+      - ".github/workflows/v5-blockscout-diagnostic.yml"
   workflow_dispatch:
 jobs:
   test:

@@ -12,8 +12,14 @@ END_TS = 1760227199
 ETH_START = 23544921
 ETH_END = 23557920
 
-ETH_RPC = "https://ethereum-rpc.publicnode.com"
-BASE_RPC = "https://base-rpc.publicnode.com"
+ETH_RPCSS = [
+    "https://eth.llamarpc.com",
+    "https://ethereum-rpc.publicnode.com",
+]
+BASE_RPCSS = [
+    "https://base.llamarpc.com",
+    "https://base-rpc.publicnode.com",
+]
 
 ETH_SPOKE = "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5"
 BASE_SPOKE = "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64"
@@ -39,47 +45,57 @@ TOPIC_NEW_DEPOSIT = "0x" + keccak(text=NEW_DEPOSIT_SIG).hex()
 TOPIC_POOL_CREATED = "0x" + keccak(text=POOL_CREATED_SIG).hex()
 TOPIC_SWAP = "0x" + keccak(text=SWAP_SIG).hex()
 
-def rpc(url, method, params, attempts=6):
-    last=None
-    for i in range(attempts):
-        try:
-            r=S.post(url,json={"jsonrpc":"2.0","id":1,"method":method,"params":params},timeout=60)
-            r.raise_for_status()
-            j=r.json()
-            if "error" in j:
-                raise RuntimeError(j["error"])
-            return j["result"]
-        except Exception as e:
-            last=e
-            time.sleep(min(2**i, 12))
-    raise RuntimeError(f"{method} failed: {last!r}")
+RPC_USED = {}
 
-def block_ts(url, n):
-    b=rpc(url,"eth_getBlockByNumber",[hex(n),False])
+def rpc(urls, method, params, attempts=4):
+    if isinstance(urls, str):
+        urls = [urls]
+    errors=[]
+    preferred = RPC_USED.get(tuple(urls))
+    ordered = ([preferred] if preferred else []) + [u for u in urls if u != preferred]
+    for url in ordered:
+        last=None
+        for i in range(attempts):
+            try:
+                r=S.post(url,json={"jsonrpc":"2.0","id":1,"method":method,"params":params},timeout=60)
+                r.raise_for_status()
+                j=r.json()
+                if "error" in j:
+                    raise RuntimeError(j["error"])
+                RPC_USED[tuple(urls)] = url
+                return j["result"]
+            except Exception as e:
+                last=e
+                time.sleep(min(2**i, 8))
+        errors.append(f"{url}: {last!r}")
+    raise RuntimeError(f"{method} failed on all RPCs: {' | '.join(errors)}")
+
+def block_ts(urls, n):
+    b=rpc(urls,"eth_getBlockByNumber",[hex(n),False])
     if b is None:
         raise RuntimeError(f"missing block {n}")
     return int(b["timestamp"],16)
 
-def latest_block(url):
-    return int(rpc(url,"eth_blockNumber",[]),16)
+def latest_block(urls):
+    return int(rpc(urls,"eth_blockNumber",[]),16)
 
-def first_block_at_or_after(url, target_ts):
-    lo,hi=0,latest_block(url)
+def first_block_at_or_after(urls, target_ts):
+    lo,hi=0,latest_block(urls)
     while lo<hi:
         mid=(lo+hi)//2
-        if block_ts(url,mid) < target_ts:
+        if block_ts(urls,mid) < target_ts:
             lo=mid+1
         else:
             hi=mid
     return lo
 
-def last_block_at_or_before(url, target_ts):
-    b=first_block_at_or_after(url,target_ts)
-    if block_ts(url,b)>target_ts:
+def last_block_at_or_before(urls, target_ts):
+    b=first_block_at_or_after(urls,target_ts)
+    if block_ts(urls,b)>target_ts:
         b-=1
     return b
 
-def get_logs_adaptive(url, address, topics, start, end, initial_chunk=20000):
+def get_logs_adaptive(urls, address, topics, start, end, initial_chunk=20000):
     out=[]; cur=start; chunk=initial_chunk
     while cur<=end:
         hi=min(end,cur+chunk-1)
@@ -87,7 +103,7 @@ def get_logs_adaptive(url, address, topics, start, end, initial_chunk=20000):
             flt={"fromBlock":hex(cur),"toBlock":hex(hi),"topics":topics}
             if address is not None:
                 flt["address"]=address
-            rows=rpc(url,"eth_getLogs",[flt],attempts=3)
+            rows=rpc(urls,"eth_getLogs",[flt],attempts=3)
             out.extend(rows)
             cur=hi+1
             if chunk<100000: chunk=min(100000,chunk*2)
@@ -139,21 +155,21 @@ def decode_deposit(log, chain_id):
         }
     raise RuntimeError("unknown deposit topic")
 
-def add_timestamps(url, rows):
+def add_timestamps(urls, rows):
     by_block=defaultdict(list)
     for r in rows: by_block[int(r["block_number"])].append(r)
     for n,rs in by_block.items():
-        ts=block_ts(url,n)
+        ts=block_ts(urls,n)
         for r in rs: r["timestamp"]=ts
 
-def collect_across(url, chain_id, spoke, start, end):
-    logs=get_logs_adaptive(url,to_checksum_address(spoke),[[TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT]],start,end,5000)
+def collect_across(urls, chain_id, spoke, start, end):
+    logs=get_logs_adaptive(urls,to_checksum_address(spoke),[[TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT]],start,end,5000)
     rows=[decode_deposit(x,chain_id) for x in logs]
-    add_timestamps(url,rows)
+    add_timestamps(urls,rows)
     return rows
 
 def discover_aero_pools(base_end):
-    logs=get_logs_adaptive(BASE_RPC,to_checksum_address(AERO_FACTORY),[TOPIC_POOL_CREATED],AERO_FACTORY_DEPLOY,base_end,50000)
+    logs=get_logs_adaptive(BASE_RPCS,to_checksum_address(AERO_FACTORY),[TOPIC_POOL_CREATED],AERO_FACTORY_DEPLOY,base_end,50000)
     pools=[]
     for l in logs:
         token0=topic_addr(l["topics"][1]); token1=topic_addr(l["topics"][2])
@@ -173,7 +189,7 @@ def collect_swaps(pools, base_start, base_end):
     addresses=list(meta)
     for k in range(0,len(addresses),25):
         batch=addresses[k:k+25]
-        logs=get_logs_adaptive(BASE_RPC,[to_checksum_address(x) for x in batch],[TOPIC_SWAP],base_start,base_end,5000)
+        logs=get_logs_adaptive(BASE_RPCS,[to_checksum_address(x) for x in batch],[TOPIC_SWAP],base_start,base_end,5000)
         for l in logs:
             p=meta[l["address"].lower()]
             vals=decode(["uint256","uint256","uint256","uint256"],bytes.fromhex(l["data"][2:]))
@@ -184,7 +200,7 @@ def collect_swaps(pools, base_start, base_end):
                 "stable":p["stable"],"amount0_in":str(vals[0]),"amount1_in":str(vals[1]),
                 "amount0_out":str(vals[2]),"amount1_out":str(vals[3])
             })
-    add_timestamps(BASE_RPC,rows)
+    add_timestamps(BASE_RPCS,rows)
     rows.sort(key=lambda r:(r["block_number"],r["log_index"]))
     return rows,selected
 
@@ -195,11 +211,11 @@ def write_csv(path, rows, fields):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    base_start=first_block_at_or_after(BASE_RPC,START_TS)
-    base_end=last_block_at_or_before(BASE_RPC,END_TS)
+    base_start=first_block_at_or_after(BASE_RPCSS,START_TS)
+    base_end=last_block_at_or_before(BASE_RPCSS,END_TS)
 
-    eth_across=collect_across(ETH_RPC,1,ETH_SPOKE,ETH_START,ETH_END)
-    base_across=collect_across(BASE_RPC,8453,BASE_SPOKE,base_start,base_end)
+    eth_across=collect_across(ETH_RPCSS,1,ETH_SPOKE,ETH_START,ETH_END)
+    base_across=collect_across(BASE_RPCSS,8453,BASE_SPOKE,base_start,base_end)
     across=sorted(eth_across+base_across,key=lambda r:(r["timestamp"],r["origin_chain_id"],r["block_number"]))
     # Keep only the Ethereum<->Base corridor for the observed bridge lower bound.
     for r in across:
@@ -227,7 +243,7 @@ def main():
     manifest={
         "classification":"PUBLIC_RAW_ONCHAIN_EVENTS_ONLY_NO_USD_INFERENCE",
         "window":{"timestamp_start":START_TS,"timestamp_end":END_TS,"ethereum_blocks":[ETH_START,ETH_END],"base_blocks":[base_start,base_end]},
-        "rpc":{"ethereum":ETH_RPC,"base":BASE_RPC},
+        "rpc":{"ethereum_candidates":ETH_RPCS,"base_candidates":BASE_RPCS,"selected":{str(k):v for k,v in RPC_USED.items()}},
         "across":{
             "ethereum_spokepool":ETH_SPOKE,"base_spokepool":BASE_SPOKE,
             "event_signatures":[OLD_DEPOSIT_SIG,NEW_DEPOSIT_SIG],

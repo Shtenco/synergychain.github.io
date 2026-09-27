@@ -1,0 +1,54 @@
+name: V5 Aerodrome targeted recovery
+
+on:
+  push:
+    branches: [ci/v5-aero-recovery]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: weth-aero-vol
+            pool: "0x7f670f78b17dec44d5ef68a48740b6f8849cc2e6"
+            token0: "0x4200000000000000000000000000000000000006"
+            token1: "0x940181a94a35a4569e4529a3cdfb74e38fd98631"
+            stable: "false"
+          - id: usdc-weth-vol
+            pool: "0xcdac0d6c6c59727a65f871236188350531885c43"
+            token0: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+            token1: "0x4200000000000000000000000000000000000006"
+            stable: "false"
+          - id: usdc-weth-stable
+            pool: "0x3548029694fbb241d45fb24ba0cd9c9d4e745f16"
+            token0: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+            token1: "0x4200000000000000000000000000000000000006"
+            stable: "true"
+          - id: usdc-aero-vol
+            pool: "0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d"
+            token0: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+            token1: "0x940181a94a35a4569e4529a3cdfb74e38fd98631"
+            stable: "false"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      POOL: ${{ matrix.pool }}
+      TOKEN0: ${{ matrix.token0 }}
+      TOKEN1: ${{ matrix.token1 }}
+      STABLE: ${{ matrix.stable }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Recover failed core pool
+        run: python3 tools/v5_aerodrome_recovery.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-aero-recovery-${{ matrix.id }}
+          path: v5_aero_recovery/
+          retention-days: 30

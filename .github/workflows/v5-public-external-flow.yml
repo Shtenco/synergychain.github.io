@@ -3,6 +3,9 @@ name: V5 public external flow collector
 on:
   push:
     branches: [ci/v5-external-flow]
+    paths:
+      - "tools/v5_public_external_flow_collector.py"
+      - ".github/workflows/v5-public-external-flow.yml"
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,41 @@
+name: V5 public external flow collector
+
+on:
+  push:
+    branches: [ci/v5-external-flow]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install requests eth-abi eth-utils
+      - name: Collect raw on-chain events
+        run: python3 tools/v5_public_external_flow_collector.py
+      - name: Validate
+        run: |
+          python3 - <<'PY'
+          import csv,json,pathlib
+          p=pathlib.Path("v5_public_raw")
+          m=json.loads((p/"manifest.json").read_text())
+          assert m["across"]["deposit_rows_total"] > 0
+          assert m["aerodrome"]["all_pools_discovered"] > 0
+          assert m["aerodrome"]["swap_rows"] > 0
+          assert m["provenance"]["no_synthetic_prices"] is True
+          for name in ("across_events.csv","aerodrome_swaps.csv","aerodrome_pools.csv"):
+              assert (p/name).is_file()
+          print("V5 RAW GATES: PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-public-external-flow-raw
+          path: v5_public_raw/
+          retention-days: 30

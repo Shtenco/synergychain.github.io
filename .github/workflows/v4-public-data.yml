@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   collect:
@@ -44,3 +44,19 @@ jobs:
           name: v4-public-historical-inputs
           path: v4_public_data/
           retention-days: 30
+
+      - name: Persist public raw evidence in branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p evidence/v4
+          cp v4_public_data/ethereum_23544921_23557920_exact_gas_real_prices.csv evidence/v4/
+          cp v4_public_data/manifest.json evidence/v4/
+          git add evidence/v4/
+          if git diff --cached --quiet; then
+            echo "No evidence changes to commit"
+          else
+            git commit -m "evidence(v4): persist 13k public historical inputs [skip ci]"
+            git push origin HEAD:ci/v4-runner-smoke
+          fi

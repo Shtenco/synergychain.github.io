@@ -1,7 +1,7 @@
 from __future__ import annotations
 import csv, json, os
 from pathlib import Path
-from tools import v5_public_external_flow_collector as c
+import v5_public_external_flow_collector as c
 
 OUT=Path("v5_aero_shard")
 SHARD_INDEX=int(os.environ["SHARD_INDEX"])

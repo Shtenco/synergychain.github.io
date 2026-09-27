@@ -67,6 +67,42 @@ def base_logs(address, from_block, to_block, topic0=None, topic1=None, topic2=No
     j=blockscout(params)
     return j.get("result",[]) if isinstance(j.get("result"),list) else []
 
+def blockscout_logs_chunked(*, address, from_block, to_block, endpoint=BASE_BLOCKSCOUT,
+                            topic0=None, topic1=None, topic2=None,
+                            topic0_1_opr=None, topic0_2_opr=None,
+                            initial_chunk=500_000, min_chunk=5_000):
+    out=[]
+    seen=set()
+    cur=int(from_block)
+    chunk=int(initial_chunk)
+    end=int(to_block)
+    while cur<=end:
+        hi=min(end,cur+chunk-1)
+        params={"module":"logs","action":"getLogs","fromBlock":str(cur),"toBlock":str(hi),"address":address}
+        if topic0: params["topic0"]=topic0
+        if topic1: params["topic1"]=topic1
+        if topic2: params["topic2"]=topic2
+        if topic0_1_opr: params["topic0_1_opr"]=topic0_1_opr
+        if topic0_2_opr: params["topic0_2_opr"]=topic0_2_opr
+        try:
+            j=blockscout(params,endpoint=endpoint,attempts=3)
+            rows=j.get("result",[]) if isinstance(j.get("result"),list) else []
+            for row in rows:
+                key=(row.get("transactionHash") or row.get("transaction_hash"),
+                     row.get("logIndex") or row.get("log_index"),
+                     row.get("address"))
+                if key not in seen:
+                    seen.add(key)
+                    out.append(row)
+            cur=hi+1
+            if chunk<initial_chunk:
+                chunk=min(initial_chunk,chunk*2)
+        except Exception:
+            if chunk<=min_chunk:
+                raise
+            chunk=max(min_chunk,chunk//2)
+    return out
+
 def eth_logs(address, from_block, to_block, topic0=None):
     params={"module":"logs","action":"getLogs","fromBlock":str(from_block),"toBlock":str(to_block),"address":address}
     if topic0: params["topic0"]=topic0
@@ -273,12 +309,17 @@ def discover_aero_pools(base_end):
     for token in sorted(SUPPORTED_BASE_INPUTS):
         t=topic_address(token)
         for pos in ("topic1","topic2"):
-            params={"module":"logs","action":"getLogs","fromBlock":str(AERO_FACTORY_DEPLOY),"toBlock":str(base_end),
-                    "address":AERO_FACTORY,"topic0":TOPIC_POOL_CREATED,pos:t,
-                    f"topic0_{pos[-1]}_opr":"and"}
-            rows=blockscout(params).get("result",[])
-            if not isinstance(rows,list):
-                continue
+            kwargs={
+                "address":AERO_FACTORY,
+                "from_block":AERO_FACTORY_DEPLOY,
+                "to_block":base_end,
+                "topic0":TOPIC_POOL_CREATED,
+                pos:t,
+                f"topic0_{pos[-1]}_opr":"and",
+                "initial_chunk":500_000,
+                "min_chunk":5_000,
+            }
+            rows=blockscout_logs_chunked(**kwargs)
             for raw in rows:
                 l=decode_blockscout_log(raw)
                 token0=topic_addr(l["topics"][1]); token1=topic_addr(l["topics"][2])
@@ -298,7 +339,10 @@ def collect_swaps(pools, base_start, base_end):
     rows=[]
     ts_cache={}
     for p in selected:
-        logs=base_logs(p["pool"],base_start,base_end,topic0=TOPIC_SWAP)
+        logs=blockscout_logs_chunked(
+            address=p["pool"], from_block=base_start, to_block=base_end,
+            topic0=TOPIC_SWAP, initial_chunk=100_000, min_chunk=2_000
+        )
         for raw in logs:
             l=decode_blockscout_log(raw)
             vals=decode(["uint256","uint256","uint256","uint256"],bytes.fromhex(l["data"][2:]))

@@ -35,12 +35,13 @@ OUT = Path("v5_public_raw")
 S = requests.Session()
 S.headers.update({"User-Agent":"SYNERGY-V5-public-event-collector/1.0"})
 BASE_BLOCKSCOUT = "https://base.blockscout.com/api"
+ETH_BLOCKSCOUT = "https://eth.blockscout.com/api"
 
-def blockscout(params, attempts=6):
+def blockscout(params, attempts=6, endpoint=BASE_BLOCKSCOUT):
     last=None
     for i in range(attempts):
         try:
-            r=S.get(BASE_BLOCKSCOUT,params=params,timeout=60)
+            r=S.get(endpoint,params=params,timeout=60)
             r.raise_for_status()
             j=r.json()
             # Blockscout uses status=0 both for errors and for an empty log result.
@@ -64,6 +65,22 @@ def base_logs(address, from_block, to_block, topic0=None, topic1=None, topic2=No
     if topic2: params["topic2"]=topic2
     j=blockscout(params)
     return j.get("result",[]) if isinstance(j.get("result"),list) else []
+
+def eth_logs(address, from_block, to_block, topic0=None):
+    params={"module":"logs","action":"getLogs","fromBlock":str(from_block),"toBlock":str(to_block),"address":address}
+    if topic0: params["topic0"]=topic0
+    j=blockscout(params, endpoint=ETH_BLOCKSCOUT)
+    return j.get("result",[]) if isinstance(j.get("result"),list) else []
+
+def eth_block_timestamp(block_number):
+    r=S.get(f"https://eth.blockscout.com/api/v2/blocks/{block_number}",timeout=45)
+    r.raise_for_status()
+    j=r.json()
+    ts=j.get("timestamp")
+    if isinstance(ts,str) and not ts.isdigit():
+        from datetime import datetime
+        return int(datetime.fromisoformat(ts.replace("Z","+00:00")).timestamp())
+    return int(ts)
 
 def topic_address(addr):
     return "0x" + "0"*24 + addr.lower().replace("0x","")
@@ -283,7 +300,17 @@ def main():
     base_start=base_block_by_time(START_TS,"after")
     base_end=base_block_by_time(END_TS,"before")
 
-    eth_across=collect_across(ETH_RPCS,1,ETH_SPOKE,ETH_START,ETH_END)
+    eth_logs_raw=[]
+    for topic in (TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT):
+        eth_logs_raw.extend(eth_logs(ETH_SPOKE,ETH_START,ETH_END,topic0=topic))
+    eth_across=[decode_deposit(decode_blockscout_log(x),1) for x in eth_logs_raw]
+    eth_ts_cache={}
+    for row in eth_across:
+        n=int(row["block_number"])
+        if n not in eth_ts_cache:
+            eth_ts_cache[n]=eth_block_timestamp(n)
+        row["timestamp"]=eth_ts_cache[n]
+
     base_logs_raw=[]
     for topic in (TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT):
         base_logs_raw.extend(base_logs(BASE_SPOKE,base_start,base_end,topic0=topic))
@@ -324,7 +351,7 @@ def main():
     manifest={
         "classification":"PUBLIC_RAW_ONCHAIN_EVENTS_ONLY_NO_USD_INFERENCE",
         "window":{"timestamp_start":START_TS,"timestamp_end":END_TS,"ethereum_blocks":[ETH_START,ETH_END],"base_blocks":[base_start,base_end]},
-        "rpc":{"ethereum_candidates":ETH_RPCS,"base_history":"https://base.blockscout.com/api + /api/v2/blocks/{block}"},
+        "history_indexers":{"ethereum":"https://eth.blockscout.com/api + /api/v2/blocks/{block}","base":"https://base.blockscout.com/api + /api/v2/blocks/{block}"},
         "across":{
             "ethereum_spokepool":ETH_SPOKE,"base_spokepool":BASE_SPOKE,
             "event_signatures":[OLD_DEPOSIT_SIG,NEW_DEPOSIT_SIG],

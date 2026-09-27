@@ -12,11 +12,11 @@ END_TS = 1760227199
 ETH_START = 23544921
 ETH_END = 23557920
 
-ETH_RPCSS = [
+ETH_RPCS = [
     "https://eth.llamarpc.com",
     "https://ethereum-rpc.publicnode.com",
 ]
-BASE_RPCSS = [
+BASE_RPCS = [
     "https://base.llamarpc.com",
     "https://base-rpc.publicnode.com",
 ]
@@ -34,6 +34,51 @@ SUPPORTED_BASE_INPUTS = {BASE_USDC, BASE_WETH, BASE_AERO}
 OUT = Path("v5_public_raw")
 S = requests.Session()
 S.headers.update({"User-Agent":"SYNERGY-V5-public-event-collector/1.0"})
+BASE_BLOCKSCOUT = "https://base.blockscout.com/api"
+
+def blockscout(params, attempts=6):
+    last=None
+    for i in range(attempts):
+        try:
+            r=S.get(BASE_BLOCKSCOUT,params=params,timeout=60)
+            r.raise_for_status()
+            j=r.json()
+            # Blockscout uses status=0 both for errors and for an empty log result.
+            if str(j.get("status"))=="0" and j.get("message") not in ("No logs found","No transactions found"):
+                raise RuntimeError(j)
+            return j
+        except Exception as e:
+            last=e
+            time.sleep(min(2**i,10))
+    raise RuntimeError(f"Blockscout failed: {params}: {last!r}")
+
+def base_block_by_time(ts, closest):
+    j=blockscout({"module":"block","action":"getblocknobytime","timestamp":str(ts),"closest":closest})
+    r=j["result"]
+    return int(r["blockNumber"] if isinstance(r,dict) else r)
+
+def base_logs(address, from_block, to_block, topic0=None, topic1=None, topic2=None):
+    params={"module":"logs","action":"getLogs","fromBlock":str(from_block),"toBlock":str(to_block),"address":address}
+    if topic0: params["topic0"]=topic0
+    if topic1: params["topic1"]=topic1
+    if topic2: params["topic2"]=topic2
+    j=blockscout(params)
+    return j.get("result",[]) if isinstance(j.get("result"),list) else []
+
+def topic_address(addr):
+    return "0x" + "0"*24 + addr.lower().replace("0x","")
+
+def decode_blockscout_log(x):
+    # Normalize legacy Blockscout/Etherscan-compatible log object to eth_getLogs shape.
+    return {
+        "address": x.get("address","").lower(),
+        "topics": x.get("topics",[]),
+        "data": x.get("data","0x"),
+        "blockNumber": x.get("blockNumber") or x.get("block_number"),
+        "transactionHash": x.get("transactionHash") or x.get("transaction_hash"),
+        "logIndex": x.get("logIndex") or x.get("log_index") or "0x0",
+    }
+
 
 OLD_DEPOSIT_SIG = "V3FundsDeposited(address,address,uint256,uint256,uint256,uint32,uint32,uint32,uint32,address,address,address,bytes)"
 NEW_DEPOSIT_SIG = "FundsDeposited(bytes32,bytes32,uint256,uint256,uint256,uint256,uint32,uint32,uint32,bytes32,bytes32,bytes32,bytes)"
@@ -162,6 +207,16 @@ def add_timestamps(urls, rows):
         ts=block_ts(urls,n)
         for r in rs: r["timestamp"]=ts
 
+def base_block_timestamp(block_number):
+    r=S.get(f"https://base.blockscout.com/api/v2/blocks/{block_number}",timeout=45)
+    r.raise_for_status()
+    j=r.json()
+    ts=j.get("timestamp")
+    if isinstance(ts,str) and not ts.isdigit():
+        from datetime import datetime
+        return int(datetime.fromisoformat(ts.replace("Z","+00:00")).timestamp())
+    return int(ts)
+
 def collect_across(urls, chain_id, spoke, start, end):
     logs=get_logs_adaptive(urls,to_checksum_address(spoke),[[TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT]],start,end,5000)
     rows=[decode_deposit(x,chain_id) for x in logs]
@@ -169,40 +224,54 @@ def collect_across(urls, chain_id, spoke, start, end):
     return rows
 
 def discover_aero_pools(base_end):
-    logs=get_logs_adaptive(BASE_RPCS,to_checksum_address(AERO_FACTORY),[TOPIC_POOL_CREATED],AERO_FACTORY_DEPLOY,base_end,50000)
-    pools=[]
-    for l in logs:
-        token0=topic_addr(l["topics"][1]); token1=topic_addr(l["topics"][2])
-        stable=bool(int(l["topics"][3],16))
-        pool,idx=decode(["address","uint256"],bytes.fromhex(l["data"][2:]))
-        pools.append({
-            "pool":pool.lower(),"token0":token0,"token1":token1,"stable":stable,
-            "factory_index":int(idx),"created_block":int(l["blockNumber"],16),
-            "selected_for_pricing": token0 in SUPPORTED_BASE_INPUTS or token1 in SUPPORTED_BASE_INPUTS
-        })
-    return pools
+    pools_by_addr={}
+    # Discover only pools where token0 or token1 is a proven-price token.
+    for token in sorted(SUPPORTED_BASE_INPUTS):
+        t=topic_address(token)
+        for pos in ("topic1","topic2"):
+            params={"module":"logs","action":"getLogs","fromBlock":str(AERO_FACTORY_DEPLOY),"toBlock":str(base_end),
+                    "address":AERO_FACTORY,"topic0":TOPIC_POOL_CREATED,pos:t}
+            rows=blockscout(params).get("result",[])
+            if not isinstance(rows,list):
+                continue
+            for raw in rows:
+                l=decode_blockscout_log(raw)
+                token0=topic_addr(l["topics"][1]); token1=topic_addr(l["topics"][2])
+                stable=bool(int(l["topics"][3],16))
+                pool,idx=decode(["address","uint256"],bytes.fromhex(l["data"][2:]))
+                pools_by_addr[pool.lower()]={
+                    "pool":pool.lower(),"token0":token0,"token1":token1,"stable":stable,
+                    "factory_index":int(idx),"created_block":int(l["blockNumber"],16)
+                    if str(l["blockNumber"]).startswith("0x") else int(l["blockNumber"]),
+                    "selected_for_pricing":True
+                }
+    return sorted(pools_by_addr.values(),key=lambda x:x["pool"])
+
 
 def collect_swaps(pools, base_start, base_end):
-    selected=[p for p in pools if p["selected_for_pricing"] and p["created_block"]<=base_end]
+    selected=[p for p in pools if p["created_block"]<=base_end]
     meta={p["pool"]:p for p in selected}
     rows=[]
-    addresses=list(meta)
-    for k in range(0,len(addresses),25):
-        batch=addresses[k:k+25]
-        logs=get_logs_adaptive(BASE_RPCS,[to_checksum_address(x) for x in batch],[TOPIC_SWAP],base_start,base_end,5000)
-        for l in logs:
-            p=meta[l["address"].lower()]
+    ts_cache={}
+    for p in selected:
+        logs=base_logs(p["pool"],base_start,base_end,topic0=TOPIC_SWAP)
+        for raw in logs:
+            l=decode_blockscout_log(raw)
             vals=decode(["uint256","uint256","uint256","uint256"],bytes.fromhex(l["data"][2:]))
+            bn=int(l["blockNumber"],16) if str(l["blockNumber"]).startswith("0x") else int(l["blockNumber"])
+            if bn not in ts_cache:
+                ts_cache[bn]=base_block_timestamp(bn)
+            li=int(l["logIndex"],16) if str(l["logIndex"]).startswith("0x") else int(l["logIndex"])
             rows.append({
-                "protocol":"AerodromeV2","chain_id":8453,"block_number":int(l["blockNumber"],16),
-                "tx_hash":l["transactionHash"],"log_index":int(l["logIndex"],16),
+                "protocol":"AerodromeV2","chain_id":8453,"block_number":bn,"timestamp":ts_cache[bn],
+                "tx_hash":l["transactionHash"],"log_index":li,
                 "pool":l["address"].lower(),"token0":p["token0"],"token1":p["token1"],
                 "stable":p["stable"],"amount0_in":str(vals[0]),"amount1_in":str(vals[1]),
                 "amount0_out":str(vals[2]),"amount1_out":str(vals[3])
             })
-    add_timestamps(BASE_RPCS,rows)
     rows.sort(key=lambda r:(r["block_number"],r["log_index"]))
     return rows,selected
+
 
 def write_csv(path, rows, fields):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -211,11 +280,23 @@ def write_csv(path, rows, fields):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    base_start=first_block_at_or_after(BASE_RPCSS,START_TS)
-    base_end=last_block_at_or_before(BASE_RPCSS,END_TS)
+    base_start=base_block_by_time(START_TS,"after")
+    base_end=base_block_by_time(END_TS,"before")
 
-    eth_across=collect_across(ETH_RPCSS,1,ETH_SPOKE,ETH_START,ETH_END)
-    base_across=collect_across(BASE_RPCSS,8453,BASE_SPOKE,base_start,base_end)
+    eth_across=collect_across(ETH_RPCS,1,ETH_SPOKE,ETH_START,ETH_END)
+    base_logs_raw=[]
+    for topic in (TOPIC_OLD_DEPOSIT,TOPIC_NEW_DEPOSIT):
+        base_logs_raw.extend(base_logs(BASE_SPOKE,base_start,base_end,topic0=topic))
+    base_across=[decode_deposit(decode_blockscout_log(x),8453) for x in base_logs_raw]
+    for row in base_across:
+        row["timestamp"]=int(row.get("quote_timestamp") or 0)
+    base_ts_cache={}
+    for row in base_across:
+        n=int(row["block_number"])
+        if n not in base_ts_cache:
+            base_ts_cache[n]=base_block_timestamp(n)
+        row["timestamp"]=base_ts_cache[n]
+
     across=sorted(eth_across+base_across,key=lambda r:(r["timestamp"],r["origin_chain_id"],r["block_number"]))
     # Keep only the Ethereum<->Base corridor for the observed bridge lower bound.
     for r in across:
@@ -243,7 +324,7 @@ def main():
     manifest={
         "classification":"PUBLIC_RAW_ONCHAIN_EVENTS_ONLY_NO_USD_INFERENCE",
         "window":{"timestamp_start":START_TS,"timestamp_end":END_TS,"ethereum_blocks":[ETH_START,ETH_END],"base_blocks":[base_start,base_end]},
-        "rpc":{"ethereum_candidates":ETH_RPCS,"base_candidates":BASE_RPCS,"selected":{str(k):v for k,v in RPC_USED.items()}},
+        "rpc":{"ethereum_candidates":ETH_RPCS,"base_history":"https://base.blockscout.com/api + /api/v2/blocks/{block}"},
         "across":{
             "ethereum_spokepool":ETH_SPOKE,"base_spokepool":BASE_SPOKE,
             "event_signatures":[OLD_DEPOSIT_SIG,NEW_DEPOSIT_SIG],

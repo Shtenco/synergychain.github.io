@@ -8,6 +8,10 @@ on:
       - ".github/workflows/v5-public-external-flow.yml"
   workflow_dispatch:
 
+concurrency:
+  group: v5-public-external-flow
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

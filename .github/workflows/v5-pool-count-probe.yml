@@ -1,0 +1,33 @@
+name: V5 Aerodrome pool-count probe
+
+on:
+  push:
+    branches: [ci/v5-fast-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Count selected Aerodrome pools
+        run: |
+          python3 - <<'PY'
+          import json
+          import tools.v5_public_external_flow_collector as c
+          base_start=c.base_block_by_time(c.START_TS,"after")
+          base_end=c.base_block_by_time(c.END_TS,"before")
+          pools=c.discover_aero_pools(base_end)
+          print(json.dumps({
+            "base_start":base_start,
+            "base_end":base_end,
+            "selected_pool_count":len(pools),
+            "sample":pools[:20],
+          },indent=2))
+          PY

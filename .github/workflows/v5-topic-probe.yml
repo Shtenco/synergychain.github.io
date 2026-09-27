@@ -1,0 +1,14 @@
+name: V5 Blockscout topic-only probe
+on:
+  push:
+    branches: [ci/v5-topic-probe]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/v5_topic_probe.py

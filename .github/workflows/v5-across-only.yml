@@ -1,0 +1,35 @@
+name: V5 Across-only collector
+
+on:
+  push:
+    branches: [ci/v5-across-only]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Collect Across Ethereum-Base deposits
+        run: python3 tools/v5_across_only.py
+      - name: Validate
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path("v5_across_raw")
+          m=json.loads((p/"manifest.json").read_text())
+          assert m["eth_base_corridor_deposits"] > 0
+          assert (p/"across_events.csv").is_file()
+          print("V5 ACROSS GATES: PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-across-raw
+          path: v5_across_raw/
+          retention-days: 30

@@ -29,3 +29,16 @@ j=r.json()
 print("V2 ITEMS",len(j.get("items",[])))
 print("V2 NEXT",j.get("next_page_params"))
 assert isinstance(j.get("items"),list)
+
+
+print("\n--- V2 FACTORY CURSOR START-BLOCK PROBE ---")
+r=S.get(u,params={"block_number":"36718926"},timeout=45)
+print("START STATUS",r.status_code)
+print(r.text[:3000])
+r.raise_for_status()
+j2=r.json()
+print("START ITEMS",len(j2.get("items",[])))
+if j2.get("items"):
+    print("START FIRST BLOCK",j2["items"][0].get("block_number"))
+    print("START LAST BLOCK",j2["items"][-1].get("block_number"))
+print("START NEXT",j2.get("next_page_params"))

@@ -88,6 +88,19 @@ def blockscout_logs_chunked(*, address, from_block, to_block, endpoint=BASE_BLOC
         try:
             j=blockscout(params,endpoint=endpoint,attempts=3)
             rows=j.get("result",[]) if isinstance(j.get("result"),list) else []
+            # Legacy Blockscout/Etherscan log APIs can cap a response at 1000
+            # records without treating it as an error. Never accept a possibly
+            # truncated range: split it until the result is strictly below cap.
+            if len(rows) >= 1000 and chunk > min_chunk:
+                chunk=max(min_chunk,chunk//2)
+                continue
+            if len(rows) >= 1000 and chunk <= min_chunk:
+                if cur < hi:
+                    chunk=max(1,chunk//2)
+                    continue
+                raise RuntimeError(
+                    f"log density exceeds API cap in single block {cur} for {address}"
+                )
             for row in rows:
                 key=(row.get("transactionHash") or row.get("transaction_hash"),
                      row.get("logIndex") or row.get("log_index"),
@@ -447,7 +460,7 @@ def collect_swaps(pools, base_start, base_end):
     for p in selected:
         logs=blockscout_logs_chunked(
             address=p["pool"], from_block=base_start, to_block=base_end,
-            topic0=TOPIC_SWAP, initial_chunk=100_000, min_chunk=2_000
+            topic0=TOPIC_SWAP, initial_chunk=100_000, min_chunk=1
         )
         for raw in logs:
             l=decode_blockscout_log(raw)

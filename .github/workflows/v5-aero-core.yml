@@ -1,0 +1,37 @@
+name: V5 Aerodrome core-pair collector
+
+on:
+  push:
+    branches: [ci/v5-aero-core]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: python3 -m pip install requests eth-abi eth-utils "eth-hash[pycryptodome]"
+      - name: Collect core-pair swaps
+        run: python3 tools/v5_aerodrome_core.py
+      - name: Validate
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path("v5_aero_core")
+          m=json.loads((p/"manifest.json").read_text())
+          assert m["core_pool_count"] > 0
+          assert m["successfully_scanned_core_pools"] > 0
+          assert m["swap_rows"] > 0
+          assert m["coverage_claim"] == "CORE_PAIR_LOWER_BOUND_ONLY; NOT ALL_AERODROME_VOLUME"
+          print("V5 AERO CORE GATES: PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-aero-core
+          path: v5_aero_core/
+          retention-days: 30

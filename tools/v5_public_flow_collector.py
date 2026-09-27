@@ -10,8 +10,8 @@ OUT=Path("v5_public_flow")
 OUT.mkdir(exist_ok=True)
 
 RPC={
-    "ethereum":"https://ethereum-rpc.publicnode.com",
-    "base":"https://base-rpc.publicnode.com",
+    "ethereum":"https://eth.llamarpc.com",
+    "base":"https://base.llamarpc.com",
 }
 W3={k:Web3(Web3.HTTPProvider(v,request_kwargs={"timeout":60})) for k,v in RPC.items()}
 

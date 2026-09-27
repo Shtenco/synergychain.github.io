@@ -31,7 +31,8 @@ def get_logs_rate_aware(start,end):
                 j=r.json()
                 if str(j.get("status"))=="0" and j.get("message") not in ("No logs found","No transactions found"):
                     raise RuntimeError(j)
-                rows=j.get("result",[]) if isinstance(j.get("result"),list) else []
+                result=j.get("result")
+                rows=result if isinstance(result,list) else []
                 break
             except Exception as e:
                 last=e

@@ -70,8 +70,22 @@ def block_ts(chain,n):
     return int(b["timestamp"],16)
 
 def boundary(chain,target,left=True):
+    if chain=="ethereum":
+        if target==T0:
+            return 23_544_921
+        if target==T1:
+            return 23_557_920
     hi=int(rpc(chain,"eth_blockNumber",[]),16)
-    lo=0
+    # Base produces roughly one block every ~2s.  The target is Oct-2025,
+    # so searching the recent 25M-block window avoids pruned genesis history.
+    lo=max(1,hi-25_000_000)
+    # tighten the lower edge upward until it is queryable
+    while lo<hi:
+        try:
+            block_ts(chain,lo)
+            break
+        except Exception:
+            lo+=1_000_000
     while lo<hi:
         mid=(lo+hi)//2
         ts=block_ts(chain,mid)

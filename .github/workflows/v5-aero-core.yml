@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: v5-aero-core-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   collect:
     runs-on: ubuntu-22.04

@@ -12,12 +12,61 @@ def write_csv(path, rows, fields):
     with path.open("w",newline="",encoding="utf-8") as f:
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore"); w.writeheader(); w.writerows(rows)
 
+
+def event_logs_rate_aware(base_url: str, address: str, start: int, end: int, topic0: str, initial_chunk: int):
+    endpoint=base_url+"/api"
+    out=[]; seen=set(); cur=int(start); chunk=int(initial_chunk)
+    while cur<=end:
+        hi=min(int(end),cur+chunk-1)
+        params={
+            "module":"logs","action":"getLogs","fromBlock":str(cur),"toBlock":str(hi),
+            "address":address,"topic0":topic0,
+        }
+        last=None
+        for attempt in range(10):
+            try:
+                r=c.S.get(endpoint,params=params,timeout=45)
+                if r.status_code==429:
+                    import time
+                    retry=float(r.headers.get("Retry-After","0") or 0)
+                    time.sleep(max(retry,min(3*(attempt+1),30)))
+                    continue
+                r.raise_for_status()
+                j=r.json()
+                if str(j.get("status"))=="0" and j.get("message") not in ("No logs found","No transactions found"):
+                    raise RuntimeError(j)
+                rows=j.get("result",[]) if isinstance(j.get("result"),list) else []
+                break
+            except Exception as e:
+                last=e
+                if attempt==9:
+                    raise RuntimeError(f"rate-aware getLogs failed {base_url} {cur}-{hi}: {last!r}")
+                import time
+                time.sleep(min(3*(attempt+1),30))
+        if len(rows)>=1000:
+            if cur==hi:
+                raise RuntimeError(f"single block exceeds 1000-log cap: {cur}")
+            chunk=max(1,chunk//2)
+            continue
+        for row in rows:
+            key=(row.get("transactionHash"),row.get("logIndex"),row.get("address"))
+            if key not in seen:
+                seen.add(key); out.append(row)
+        cur=hi+1
+        if chunk<initial_chunk:
+            chunk=min(initial_chunk,chunk*2)
+        import time
+        time.sleep(0.60)
+    return out
+
 def main():
     OUT.mkdir(exist_ok=True)
     topics={c.TOPIC_OLD_DEPOSIT.lower(),c.TOPIC_NEW_DEPOSIT.lower()}
     if CHAIN=="ethereum":
         start,end=c.ETH_START,c.ETH_END
-        raw=v2_address_logs("https://eth.blockscout.com",c.ETH_SPOKE,start,end,topics)
+        raw=[]
+        for topic in sorted(topics):
+            raw.extend(event_logs_rate_aware("https://eth.blockscout.com",c.ETH_SPOKE,start,end,topic,5_000))
         v4_ts=c.load_v4_timestamp_map()
         rows=[]
         for item in raw:
@@ -36,7 +85,9 @@ def main():
         chain_id=1; spoke=c.ETH_SPOKE
     elif CHAIN=="base":
         start=c.base_block_by_time(c.START_TS,"after"); end=c.base_block_by_time(c.END_TS,"before")
-        raw=v2_address_logs("https://base.blockscout.com",c.BASE_SPOKE,start,end,topics)
+        raw=[]
+        for topic in sorted(topics):
+            raw.extend(event_logs_rate_aware("https://base.blockscout.com",c.BASE_SPOKE,start,end,topic,10_000))
         rows=[]
         for item in raw:
             norm=c.decode_blockscout_log({

@@ -42,3 +42,17 @@ if j2.get("items"):
     print("START FIRST BLOCK",j2["items"][0].get("block_number"))
     print("START LAST BLOCK",j2["items"][-1].get("block_number"))
 print("START NEXT",j2.get("next_page_params"))
+
+
+print("\n--- V2 FACTORY SYNTHETIC CURSOR PROBE ---")
+params={"block_number":"36718926","index":"2147483647","items_count":"50"}
+r=S.get(u,params=params,timeout=45)
+print("CURSOR STATUS",r.status_code)
+print(r.text[:3500])
+r.raise_for_status()
+j3=r.json()
+print("CURSOR ITEMS",len(j3.get("items",[])))
+if j3.get("items"):
+    print("CURSOR FIRST BLOCK",j3["items"][0].get("block_number"))
+    print("CURSOR LAST BLOCK",j3["items"][-1].get("block_number"))
+print("CURSOR NEXT",j3.get("next_page_params"))

@@ -10,8 +10,8 @@ OUT=Path("v5_public_flow")
 OUT.mkdir(exist_ok=True)
 
 RPC={
-    "ethereum":"https://eth.llamarpc.com",
-    "base":"https://base.llamarpc.com",
+    "ethereum":"https://ethereum-rpc.publicnode.com",
+    "base":"https://base-rpc.publicnode.com",
 }
 W3={k:Web3(Web3.HTTPProvider(v,request_kwargs={"timeout":60})) for k,v in RPC.items()}
 
@@ -106,8 +106,17 @@ def load_across_abi(url):
     return get_json(url)["abi"]
 
 def collect_across():
-    rows=[]; bounds={}
-    for chain in ("ethereum","base"):
+    rows=[]
+    bounds={
+        "ethereum":{
+            "start":23_544_921,
+            "end":23_557_920,
+            "start_ts":T0,
+            "end_ts":T1,
+            "source":"V4 exact Xatu-validated Ethereum window; no Ethereum log RPC required in V5 lower-bound"
+        }
+    }
+    for chain in ("base",):
         w3=W3[chain]
         start=boundary(chain,T0,True); end=boundary(chain,T1,False)
         bounds[chain]={"start":start,"end":end,"start_ts":block_ts(chain,start),"end_ts":block_ts(chain,end)}
@@ -225,13 +234,13 @@ def main():
     across,bounds=collect_across()
     aero,pools,meta=collect_aero(bounds["base"])
     manifest={
-      "classification":"OBSERVED_EXTERNAL_FLOW_LOWER_BOUND_RAW_ONCHAIN_EVENTS",
+      "classification":"BASE_OBSERVED_EXTERNAL_FLOW_LOWER_BOUND_RAW_ONCHAIN_EVENTS",
       "time_window":{"start":T0,"end":T1},
       "chain_bounds":bounds,
       "across":{"addresses":ACROSS,"event_rows":len(across),"unique_tx":len({r["tx_hash"] for r in across})},
       "aerodrome":{"factory":AERO_FACTORY,"pool_count":len(pools),"swap_rows":len(aero),"unique_tx":len({r["tx_hash"] for r in aero})},
       "files":["across_events.csv","aerodrome_swaps.csv","aerodrome_pools.json"],
-      "note":"Raw evidence only. USD valuation and private SYNERGY HardNAV replay are intentionally performed outside this public collector."
+      "note":"Raw Base evidence only (Across Base + Aerodrome Base). Ethereum time window is inherited from V4; Ethereum Across extension is intentionally deferred because public hosted RPC log access is blocked. USD valuation and private SYNERGY HardNAV replay are performed outside this public collector."
     }
     (OUT/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
     print(json.dumps(manifest,indent=2),flush=True)

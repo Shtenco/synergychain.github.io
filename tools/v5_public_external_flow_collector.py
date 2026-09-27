@@ -356,7 +356,7 @@ def rpc_batch_eth_call(calls, batch_size=100):
             errors.append(f"{url}: {e!r}")
     raise RuntimeError("batch eth_call failed: "+" | ".join(errors))
 
-def blockscout_v2_address_logs(address, *, start_block=None):
+def blockscout_v2_address_logs(address, *, start_block=None, max_attempts=8, request_timeout=60):
     url=f"https://base.blockscout.com/api/v2/addresses/{address}/logs"
     params={}
     if start_block is not None:
@@ -369,9 +369,9 @@ def blockscout_v2_address_logs(address, *, start_block=None):
         }
     while True:
         last=None
-        for attempt in range(8):
+        for attempt in range(max_attempts):
             try:
-                r=S.get(url,params=params,timeout=60)
+                r=S.get(url,params=params,timeout=request_timeout)
                 if r.status_code==429:
                     retry=float(r.headers.get("Retry-After","1"))
                     time.sleep(max(retry, min(2**attempt,15)))
@@ -381,7 +381,7 @@ def blockscout_v2_address_logs(address, *, start_block=None):
                 break
             except Exception as e:
                 last=e
-                if attempt==7:
+                if attempt==max_attempts-1:
                     raise RuntimeError(f"Blockscout v2 logs failed {address}: {last!r}")
                 time.sleep(min(2**attempt,15))
         for item in page.get("items",[]):
@@ -456,71 +456,87 @@ def collect_swaps(pools, base_start, base_end):
     selected=[p for p in pools if p["created_block"]<=base_end]
     rows=[]
     seen=set()
+    scan_failures=[]
+    scanned_pools=0
 
     # Use Blockscout v2 cursor pagination per pool.  The legacy v1 getLogs
     # endpoint rate-limits even single-block pool queries from GitHub runners.
     # Synthetic cursor jumps directly below base_end; pagination stops once
     # block_number falls below base_start.
     for pool_i,p in enumerate(selected):
-        for item in blockscout_v2_address_logs(p["pool"], start_block=base_end):
-            bn=int(item.get("block_number") or 0)
-            if bn < base_start:
-                break
-            if bn > base_end:
-                continue
-            topics=item.get("topics") or []
-            if not topics or topics[0].lower()!=TOPIC_SWAP.lower():
-                continue
+        try:
+            for item in blockscout_v2_address_logs(
+                p["pool"],
+                start_block=base_end,
+                max_attempts=3,
+                request_timeout=20,
+            ):
+                bn=int(item.get("block_number") or 0)
+                if bn < base_start:
+                    break
+                if bn > base_end:
+                    continue
+                topics=item.get("topics") or []
+                if not topics or topics[0].lower()!=TOPIC_SWAP.lower():
+                    continue
 
-            tx=(item.get("transaction_hash") or "").lower()
-            li=int(item.get("index") or 0)
-            key=(tx,li)
-            if key in seen:
-                continue
-            seen.add(key)
+                tx=(item.get("transaction_hash") or "").lower()
+                li=int(item.get("index") or 0)
+                key=(tx,li)
+                if key in seen:
+                    continue
+                seen.add(key)
 
-            decoded=item.get("decoded") or {}
-            params=decoded.get("parameters") or []
-            values={x.get("name"):x.get("value") for x in params}
-            if all(k in values for k in ("amount0In","amount1In","amount0Out","amount1Out")):
-                a0in=int(values["amount0In"])
-                a1in=int(values["amount1In"])
-                a0out=int(values["amount0Out"])
-                a1out=int(values["amount1Out"])
-            else:
-                data=item.get("data","0x")
-                a0in,a1in,a0out,a1out=decode(
-                    ["uint256","uint256","uint256","uint256"],
-                    bytes.fromhex(data[2:])
-                )
+                decoded=item.get("decoded") or {}
+                params=decoded.get("parameters") or []
+                values={x.get("name"):x.get("value") for x in params}
+                if all(k in values for k in ("amount0In","amount1In","amount0Out","amount1Out")):
+                    a0in=int(values["amount0In"])
+                    a1in=int(values["amount1In"])
+                    a0out=int(values["amount0Out"])
+                    a1out=int(values["amount1Out"])
+                else:
+                    data=item.get("data","0x")
+                    a0in,a1in,a0out,a1out=decode(
+                        ["uint256","uint256","uint256","uint256"],
+                        bytes.fromhex(data[2:])
+                    )
 
-            ts_text=item.get("block_timestamp")
-            if not ts_text:
-                raise RuntimeError(f"v2 swap log missing block_timestamp: {tx}:{li}")
-            from datetime import datetime
-            ts=int(datetime.fromisoformat(ts_text.replace("Z","+00:00")).timestamp())
+                ts_text=item.get("block_timestamp")
+                if not ts_text:
+                    raise RuntimeError(f"v2 swap log missing block_timestamp: {tx}:{li}")
+                from datetime import datetime
+                ts=int(datetime.fromisoformat(ts_text.replace("Z","+00:00")).timestamp())
 
-            rows.append({
-                "protocol":"AerodromeV2",
-                "chain_id":8453,
-                "block_number":bn,
-                "timestamp":ts,
-                "tx_hash":tx,
-                "log_index":li,
-                "pool":p["pool"].lower(),
-                "token0":p["token0"],
-                "token1":p["token1"],
-                "stable":p["stable"],
-                "amount0_in":str(a0in),
-                "amount1_in":str(a1in),
-                "amount0_out":str(a0out),
-                "amount1_out":str(a1out),
+                rows.append({
+                    "protocol":"AerodromeV2",
+                    "chain_id":8453,
+                    "block_number":bn,
+                    "timestamp":ts,
+                    "tx_hash":tx,
+                    "log_index":li,
+                    "pool":p["pool"].lower(),
+                    "token0":p["token0"],
+                    "token1":p["token1"],
+                    "stable":p["stable"],
+                    "amount0_in":str(a0in),
+                    "amount1_in":str(a1in),
+                    "amount0_out":str(a0out),
+                    "amount1_out":str(a1out),
+                })
+            scanned_pools += 1
+        except Exception as e:
+            scan_failures.append({
+                "pool": p["pool"],
+                "token0": p["token0"],
+                "token1": p["token1"],
+                "error": repr(e),
             })
         # Gentle cross-pool pacing in addition to the helper's 429 backoff.
-        time.sleep(0.12)
+        time.sleep(0.08)
 
     rows.sort(key=lambda r:(r["block_number"],r["log_index"]))
-    return rows,selected
+    return rows,selected,scanned_pools,scan_failures
 
 
 def write_csv(path, rows, fields):
@@ -581,7 +597,7 @@ def main():
         )
 
     pools=discover_aero_pools(base_end)
-    swaps,selected_pools=collect_swaps(pools,base_start,base_end)
+    swaps,selected_pools,scanned_pools,scan_failures=collect_swaps(pools,base_start,base_end)
 
     across_fields=[
         "event","origin_chain_id","destination_chain_id","deposit_id","block_number","timestamp","tx_hash",
@@ -610,8 +626,14 @@ def main():
         "aerodrome":{
             "factory":AERO_FACTORY,"factory_deploy_block":AERO_FACTORY_DEPLOY,
             "pool_created_signature":POOL_CREATED_SIG,"swap_signature":SWAP_SIG,
-            "all_pools_discovered":len(pools),"selected_pricable_pools":len(selected_pools),"swap_rows":len(swaps),
-            "selection":"pool token0 or token1 is Base USDC/WETH/AERO; raw input side kept exactly"
+            "all_pools_discovered":len(pools),
+            "selected_pricable_pools":len(selected_pools),
+            "successfully_scanned_pools":scanned_pools,
+            "failed_pool_scans":len(scan_failures),
+            "scan_coverage_fraction": (scanned_pools / len(selected_pools)) if selected_pools else 0.0,
+            "scan_failures":scan_failures,
+            "swap_rows":len(swaps),
+            "selection":"pool token0 or token1 is Base USDC/WETH/AERO; raw input side kept exactly; failed indexer scans remain explicit unresolved coverage"
         },
         "provenance":{
             "across_contracts":"official across-protocol/contracts deployed-addresses",

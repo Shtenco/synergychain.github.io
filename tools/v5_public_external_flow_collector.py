@@ -61,12 +61,17 @@ def base_block_by_time(ts, closest):
     return int(r["blockNumber"] if isinstance(r,dict) else r)
 
 def base_logs(address, from_block, to_block, topic0=None, topic1=None, topic2=None):
-    params={"module":"logs","action":"getLogs","fromBlock":str(from_block),"toBlock":str(to_block),"address":address}
-    if topic0: params["topic0"]=topic0
-    if topic1: params["topic1"]=topic1
-    if topic2: params["topic2"]=topic2
-    j=blockscout(params)
-    return j.get("result",[]) if isinstance(j.get("result"),list) else []
+    return blockscout_logs_chunked(
+        address=address,
+        from_block=from_block,
+        to_block=to_block,
+        endpoint=BASE_BLOCKSCOUT,
+        topic0=topic0,
+        topic1=topic1,
+        topic2=topic2,
+        initial_chunk=20_000,
+        min_chunk=250,
+    )
 
 def blockscout_logs_chunked(*, address, from_block, to_block, endpoint=BASE_BLOCKSCOUT,
                             topic0=None, topic1=None, topic2=None,
@@ -118,10 +123,15 @@ def blockscout_logs_chunked(*, address, from_block, to_block, endpoint=BASE_BLOC
     return out
 
 def eth_logs(address, from_block, to_block, topic0=None):
-    params={"module":"logs","action":"getLogs","fromBlock":str(from_block),"toBlock":str(to_block),"address":address}
-    if topic0: params["topic0"]=topic0
-    j=blockscout(params, endpoint=ETH_BLOCKSCOUT)
-    return j.get("result",[]) if isinstance(j.get("result"),list) else []
+    return blockscout_logs_chunked(
+        address=address,
+        from_block=from_block,
+        to_block=to_block,
+        endpoint=ETH_BLOCKSCOUT,
+        topic0=topic0,
+        initial_chunk=10_000,
+        min_chunk=100,
+    )
 
 def eth_block_timestamp(block_number):
     r=S.get(f"https://eth.blockscout.com/api/v2/blocks/{block_number}",timeout=45)

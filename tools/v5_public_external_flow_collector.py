@@ -343,9 +343,17 @@ def rpc_batch_eth_call(calls, batch_size=100):
             errors.append(f"{url}: {e!r}")
     raise RuntimeError("batch eth_call failed: "+" | ".join(errors))
 
-def blockscout_v2_address_logs(address):
+def blockscout_v2_address_logs(address, *, start_block=None):
     url=f"https://base.blockscout.com/api/v2/addresses/{address}/logs"
     params={}
+    if start_block is not None:
+        # Blockscout cursor semantics are (block_number, index) descending.
+        # A very large index starts immediately below the requested block.
+        params={
+            "block_number":str(int(start_block)),
+            "index":str(2_147_483_647),
+            "items_count":"50",
+        }
     while True:
         last=None
         for attempt in range(8):
@@ -378,7 +386,7 @@ def discover_aero_pools(base_end):
     # scan stops at factory deployment.
     pools_by_addr={}
     seen_in_window=False
-    for item in blockscout_v2_address_logs(AERO_FACTORY):
+    for item in blockscout_v2_address_logs(AERO_FACTORY, start_block=base_end):
         bn=int(item.get("block_number") or 0)
         if bn > base_end:
             continue

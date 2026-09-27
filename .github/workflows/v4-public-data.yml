@@ -1,0 +1,46 @@
+name: V4 public historical data collector
+
+on:
+  push:
+    branches:
+      - ci/v4-runner-smoke
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install data dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install numpy pyarrow requests
+      - name: Collect public historical inputs
+        run: python3 tools/v4_public_data_collector.py
+      - name: Validate raw evidence
+        run: |
+          python3 - <<'PY'
+          import csv,json,pathlib
+          p=pathlib.Path("v4_public_data/ethereum_23544921_23557920_exact_gas_real_prices.csv")
+          m=pathlib.Path("v4_public_data/manifest.json")
+          assert p.is_file() and m.is_file()
+          with p.open(newline="",encoding="utf-8") as f: rows=list(csv.DictReader(f))
+          assert len(rows)==13000
+          assert int(rows[0]["block_number"])==23544921
+          assert int(rows[-1]["block_number"])==23557920
+          j=json.loads(m.read_text())
+          assert j["ethereum_blocks"]["contiguous"] is True
+          assert j["market_inputs"]["factor_mapped_assets"]==[]
+          assert len(j["market_inputs"]["provenance"])==10
+          assert all(x["future_candle_violations"]==0 for x in j["market_inputs"]["provenance"].values())
+          print("PUBLIC V4 RAW EVIDENCE: PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4-public-historical-inputs
+          path: v4_public_data/
+          retention-days: 30

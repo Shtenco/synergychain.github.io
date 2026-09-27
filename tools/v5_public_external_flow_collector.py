@@ -48,6 +48,7 @@ def blockscout(params, attempts=6, endpoint=BASE_BLOCKSCOUT):
             # Blockscout uses status=0 both for errors and for an empty log result.
             if str(j.get("status"))=="0" and j.get("message") not in ("No logs found","No transactions found"):
                 raise RuntimeError(j)
+            time.sleep(0.10)
             return j
         except Exception as e:
             last=e
@@ -342,42 +343,92 @@ def rpc_batch_eth_call(calls, batch_size=100):
             errors.append(f"{url}: {e!r}")
     raise RuntimeError("batch eth_call failed: "+" | ".join(errors))
 
+def blockscout_v2_address_logs(address):
+    url=f"https://base.blockscout.com/api/v2/addresses/{address}/logs"
+    params={}
+    while True:
+        last=None
+        for attempt in range(8):
+            try:
+                r=S.get(url,params=params,timeout=60)
+                if r.status_code==429:
+                    retry=float(r.headers.get("Retry-After","1"))
+                    time.sleep(max(retry, min(2**attempt,15)))
+                    continue
+                r.raise_for_status()
+                page=r.json()
+                break
+            except Exception as e:
+                last=e
+                if attempt==7:
+                    raise RuntimeError(f"Blockscout v2 logs failed {address}: {last!r}")
+                time.sleep(min(2**attempt,15))
+        for item in page.get("items",[]):
+            yield item
+        nxt=page.get("next_page_params")
+        if not nxt:
+            return
+        params={k:str(v) for k,v in nxt.items()}
+        time.sleep(0.08)
+
 def discover_aero_pools(base_end):
-    # Enumerate the factory state directly instead of scanning 33M historical
-    # blocks for PoolCreated. Current enumeration may include pools created
-    # after the replay window; those are harmless because only Swap logs inside
-    # [base_start, base_end] are counted.
-    length_raw=eth_call_latest(AERO_FACTORY,selector("allPoolsLength()"))
-    length=int(length_raw,16)
-    pool_calls=[
-        (AERO_FACTORY, selector("allPools(uint256)") + encode_u256(i))
-        for i in range(length)
-    ]
-    pool_results=rpc_batch_eth_call(pool_calls)
-    addresses=["0x"+x[-40:].lower() for x in pool_results]
+    # Blockscout v2 address-log cursor pagination is used instead of a
+    # 33M-block range query or rate-limited public RPC state enumeration.
+    # Pages are newest -> oldest. Pools created after the V5 window are skipped;
+    # scan stops at factory deployment.
+    pools_by_addr={}
+    seen_in_window=False
+    for item in blockscout_v2_address_logs(AERO_FACTORY):
+        bn=int(item.get("block_number") or 0)
+        if bn > base_end:
+            continue
+        seen_in_window=True
+        if bn < AERO_FACTORY_DEPLOY:
+            break
+        topics=item.get("topics") or []
+        if not topics or topics[0].lower()!=TOPIC_POOL_CREATED.lower():
+            continue
 
-    meta_calls=[]
-    for addr in addresses:
-        meta_calls.extend([
-            (addr,selector("token0()")),
-            (addr,selector("token1()")),
-            (addr,selector("stable()")),
-        ])
-    meta=rpc_batch_eth_call(meta_calls)
-
-    pools=[]
-    for i,addr in enumerate(addresses):
-        t0="0x"+meta[3*i][-40:].lower()
-        t1="0x"+meta[3*i+1][-40:].lower()
-        stable=bool(int(meta[3*i+2],16))
-        if t0 in SUPPORTED_BASE_INPUTS or t1 in SUPPORTED_BASE_INPUTS:
-            pools.append({
-                "pool":addr,"token0":t0,"token1":t1,"stable":stable,
-                "factory_index":i,
-                "created_block":0,
-                "selected_for_pricing":True,
+        decoded=item.get("decoded") or {}
+        params=decoded.get("parameters") or []
+        values={p.get("name"):p.get("value") for p in params}
+        if values.get("token0") and values.get("token1") and values.get("pool"):
+            token0=str(values["token0"]).lower()
+            token1=str(values["token1"]).lower()
+            pool=str(values["pool"]).lower()
+            stable=str(values.get("stable","false")).lower()=="true"
+            idx=int(values.get("arg4") or values.get("index") or 0)
+        else:
+            l=decode_blockscout_log({
+                "address":AERO_FACTORY,
+                "topics":topics,
+                "data":item.get("data","0x"),
+                "blockNumber":str(bn),
+                "transactionHash":item.get("transaction_hash",""),
+                "logIndex":str(item.get("index",0)),
+                "timestamp":item.get("block_timestamp"),
             })
-    return pools
+            token0=topic_addr(l["topics"][1])
+            token1=topic_addr(l["topics"][2])
+            stable=bool(int(l["topics"][3],16))
+            pool,idx=decode(["address","uint256"],bytes.fromhex(l["data"][2:]))
+            pool=pool.lower()
+            idx=int(idx)
+
+        if token0 in SUPPORTED_BASE_INPUTS or token1 in SUPPORTED_BASE_INPUTS:
+            pools_by_addr[pool]={
+                "pool":pool,
+                "token0":token0,
+                "token1":token1,
+                "stable":stable,
+                "factory_index":idx,
+                "created_block":bn,
+                "selected_for_pricing":True,
+            }
+
+    if not seen_in_window:
+        raise RuntimeError("Blockscout v2 factory pagination never reached V5 window")
+    return sorted(pools_by_addr.values(),key=lambda x:x["pool"])
 
 
 def collect_swaps(pools, base_start, base_end):

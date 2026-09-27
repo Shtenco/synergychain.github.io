@@ -1,0 +1,51 @@
+name: V5 real external flow collector
+
+on:
+  push:
+    branches:
+      - ci/v5-real-flow
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect-v5-flow:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install web3 requests
+      - name: Collect Across and Aerodrome events
+        run: python3 tools/v5_public_flow_collector.py
+      - name: Validate raw event evidence
+        run: |
+          python3 - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path("v5_public_flow")
+          m=json.loads((root/"manifest.json").read_text())
+          assert m["time_window"]["start"]==1760070203
+          assert m["time_window"]["end"]==1760227199
+          assert m["chain_bounds"]["base"]["start_ts"] >= 1760070203
+          assert m["chain_bounds"]["base"]["end_ts"] <= 1760227199
+          for fn in ("across_events.csv","aerodrome_swaps.csv"):
+              assert (root/fn).is_file()
+          with (root/"across_events.csv").open(newline="",encoding="utf-8") as f:
+              across=list(csv.DictReader(f))
+          with (root/"aerodrome_swaps.csv").open(newline="",encoding="utf-8") as f:
+              aero=list(csv.DictReader(f))
+          assert len(across)>0, "no Across events in historical window"
+          assert len(aero)>0, "no Aerodrome swaps in historical window"
+          assert all(r["tx_hash"] for r in across)
+          assert all(r["tx_hash"] for r in aero)
+          print("V5 RAW ONCHAIN EVENT GATES: PASS")
+          print("Across rows:",len(across),"Aerodrome swaps:",len(aero))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-real-external-flow-raw
+          path: v5_public_flow/
+          retention-days: 30

@@ -32,3 +32,39 @@ flowchart LR
 - [`synergy_system`](https://github.com/Shtenco/synergy_system).
 
 [📚 Атлас 75 репозиториев](https://github.com/Shtenco/synergy_system/blob/main/docs/SYNERGY_REPOSITORY_ATLAS.md)
+
+
+---
+
+# 🌐 Глубокий технический паспорт GitHub Pages build
+
+## Фактический `main`
+
+```text
+index.html
+404.html
+.nojekyll
+DEPLOY_TRIGGER
+.github/workflows/pages.yml
+.github/workflows/split-roboforex-drive.yml
+README.md
+```
+
+Это компактный **static deployment repository**. Отдельный workflow `split-roboforex-drive.yml` означает, что рядом с обычным Pages deploy есть data/file-processing automation; её выход не должен автоматически считаться backend authority сайта.
+
+## Supply chain
+
+```mermaid
+flowchart LR
+    SRC[📄 Static source] --> WF[⚙️ GitHub Actions]
+    WF --> PAGES[🌐 GitHub Pages]
+    PAGES --> USER[👤 Browser]
+```
+
+## Gates
+
+- Pages workflow must pin trusted actions;
+- no secrets/runtime credentials in static artifacts;
+- every public metric must link to its source;
+- large-data workflows must not silently alter presentation claims;
+- CSP/SRI strategy should be documented if external resources are used.
